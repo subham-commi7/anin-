@@ -1,0 +1,7 @@
+{
+  "name": "Anin Assistant",
+  "description": "Anin Voice Assistant with authenticated Subham speaker verification and custom output voice studio.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
