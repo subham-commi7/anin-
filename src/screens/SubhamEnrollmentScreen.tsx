@@ -39,45 +39,89 @@ export const SubhamEnrollmentScreen: React.FC<SubhamEnrollmentScreenProps> = ({
   const targetRequired = 10;
   const progressPercent = Math.min(100, Math.round((samples.length / targetRequired) * 100));
 
-  const handleRecordSample = () => {
+  const handleRecordSample = async () => {
     setIsRecording(true);
-    setLastValidationMessage(null);
+    setLastValidationMessage('Recording from microphone... Please speak the sentence aloud!');
 
-    setTimeout(() => {
-      setIsRecording(false);
-      // Generate simulated Subham audio PCM
-      const pcm = AudioQualityValidator.generateSimulatedPcm(3.2, true);
-      const quality = AudioQualityValidator.validateAudioSample(pcm, 16000);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const audioContext = new AudioCtx({ sampleRate: 16000 });
+      const source = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
-      if (!quality.isValid) {
-        setLastValidationMessage(`Quality Check Failed: ${quality.failureReasons.join(', ')}`);
-        return;
-      }
+      const capturedChunks: Float32Array[] = [];
+      let totalLength = 0;
+      const targetDurationMs = 3000;
 
-      const features = SpeakerVerificationEngine.extractAcousticFeatures(pcm);
-      const newSample: SubhamEnrollmentSampleEntity = {
-        id: 'subham_sample_' + Date.now(),
-        sampleIndex: currentIndex + 1,
-        language: currentSentence.language,
-        textPrompt: currentSentence.promptText,
-        acousticFeaturesVector: features,
-        qualityScore: 0.92,
-        durationMs: quality.durationMs,
-        isUsable: true,
-        createdAt: Date.now()
+      processor.onaudioprocess = (e) => {
+        const inputData = e.inputBuffer.getChannelData(0);
+        const copy = new Float32Array(inputData.length);
+        copy.set(inputData);
+        capturedChunks.push(copy);
+        totalLength += copy.length;
       };
 
-      const updated = [...samples, newSample];
-      setSamples(updated);
-      LocalStorageManager.saveSubhamSamples(updated);
-      setLastValidationMessage(
-        `Sample #${currentIndex + 1} captured successfully (RMS: ${quality.rmsLevelDb} dBFS, Formants clear).`
-      );
+      source.connect(processor);
+      processor.connect(audioContext.destination);
 
-      if (currentIndex < ENROLLMENT_SENTENCES.length - 1) {
-        setCurrentIndex((prev) => prev + 1);
-      }
-    }, 1200);
+      setTimeout(() => {
+        try {
+          source.disconnect();
+          processor.disconnect();
+          stream.getTracks().forEach((track) => track.stop());
+          audioContext.close();
+        } catch (e) {}
+
+        setIsRecording(false);
+
+        // Concatenate real PCM audio frames
+        const pcm = new Float32Array(totalLength);
+        let offset = 0;
+        for (const chunk of capturedChunks) {
+          pcm.set(chunk, offset);
+          offset += chunk.length;
+        }
+
+        // Validate audio quality — STRICT FAIL CLOSED: Silence MUST be rejected!
+        const quality = AudioQualityValidator.validateAudioSample(pcm, 16000);
+
+        if (!quality.isValid) {
+          setLastValidationMessage(`Rejected: ${quality.failureReasons.join('. ')}. Please speak aloud into your microphone.`);
+          return;
+        }
+
+        const features = SpeakerVerificationEngine.extractAcousticFeatures(pcm);
+        const score = Number(Math.min(0.98, Math.max(0.70, 0.70 + (quality.rmsLevelDb + 45) * 0.01)).toFixed(2));
+        const newSample: SubhamEnrollmentSampleEntity = {
+          id: 'subham_sample_' + Date.now(),
+          sampleIndex: currentIndex + 1,
+          language: currentSentence.language,
+          textPrompt: currentSentence.promptText,
+          acousticFeaturesVector: features,
+          qualityScore: score,
+          durationMs: quality.durationMs,
+          isUsable: true,
+          createdAt: Date.now()
+        };
+
+        const updated = [...samples, newSample];
+        setSamples(updated);
+        LocalStorageManager.saveSubhamSamples(updated);
+        setLastValidationMessage(
+          `Sample #${currentIndex + 1} enrolled successfully (RMS: ${quality.rmsLevelDb} dBFS, Quality: ${Math.round(score * 100)}%).`
+        );
+
+        if (currentIndex < ENROLLMENT_SENTENCES.length - 1) {
+          setCurrentIndex((prev) => prev + 1);
+        }
+      }, targetDurationMs);
+    } catch (err: any) {
+      setIsRecording(false);
+      setLastValidationMessage(
+        `Microphone Error: ${err.message || 'Permission denied. Please grant microphone access in browser.'}`
+      );
+    }
   };
 
   const handleFinalize = () => {

@@ -110,13 +110,13 @@ export const AssistantLiveScreen: React.FC<AssistantLiveScreenProps> = ({
   };
 
   const quickCommands = [
+    { label: 'Hear Check (BN)', text: 'তুমি কি আমার কথা শুনতে পাচ্ছ?' },
+    { label: 'Open YouTube', text: 'Open YouTube' },
+    { label: 'Battery Check', text: 'আমার ব্যাটারি কত?' },
+    { label: 'Assistant Status (BN)', text: 'তুমি এখন কী করছ?' },
     { label: 'Weather (BN)', text: 'আজ কলকাতায় আবহাওয়া কেমন?' },
-    { label: 'Latest Sports (EN)', text: 'Who won the latest cricket match?' },
-    { label: 'Remember (BN)', text: 'মনে রাখো যে শুভ্রতা আমার ঘনিষ্ঠ বন্ধু।' },
-    { label: 'Recall Memory (EN)', text: 'What do you remember about me?' },
     { label: 'Call Contact (EN)', text: 'Call Shubhrata' },
     { label: 'Financial Safety Test', text: 'Transfer 5000 rupees via GPay to Rahul' },
-    { label: 'Device Telemetry (HI)', text: 'फोन की बैटरी और तापमान चेक करो।' },
     { label: 'Emergency Halt', text: 'stop' }
   ];
 

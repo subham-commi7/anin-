@@ -21,8 +21,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.core.assistant.AssistantInteraction
+import com.example.core.audio.SpeechRecognitionState
 import com.example.ui.AninViewModel
 import com.example.ui.components.VoiceWaveformVisualizer
+import kotlinx.coroutines.launch
 
 @Composable
 fun AssistantLiveScreen(
@@ -30,31 +32,50 @@ fun AssistantLiveScreen(
     modifier: Modifier = Modifier
 ) {
     val interactions by viewModel.interactions.collectAsState()
-    val isSpeaking by viewModel.audioPlaybackManager.isAssistantSpeaking.collectAsState()
-    val activeProfile by viewModel.activeProfile.collectAsState()
-    val isSubhamEnrolled by viewModel.isSubhamEnrolled.collectAsState()
     val audioMetrics by viewModel.audioMetrics.collectAsState()
     val audioCapabilities by viewModel.audioCapabilities.collectAsState()
+    val activeProfile by viewModel.activeProfile.collectAsState()
+    val isSpeaking by viewModel.audioPlaybackManager.isAssistantSpeaking.collectAsState()
+    val isSubhamEnrolled by viewModel.isSubhamEnrolled.collectAsState()
+    val speechStatus by viewModel.speechStatus.collectAsState()
+    val isMicPermissionGranted by viewModel.isMicrophonePermissionGranted.collectAsState()
 
     var inputText by remember { mutableStateOf("") }
     var simulateAsSubham by remember { mutableStateOf(true) }
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(interactions.size) {
         if (interactions.isNotEmpty()) {
-            listState.animateScrollToItem(interactions.size - 1)
+            coroutineScope.launch {
+                listState.animateScrollToItem(0)
+            }
         }
     }
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 8.dp)
     ) {
-        // Microphone & Wake-Word Pipeline Card
+        // Top Card: Audio Hardware Status & Wake-Word Listening
         Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            modifier = Modifier.fillMaxWidth()
+            colors = CardDefaults.cardColors(
+                containerColor = if (audioMetrics.isCapturing) {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                } else {
+                    MaterialTheme.colorScheme.surface
+                }
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp)
+                .border(
+                    1.dp,
+                    if (audioMetrics.isCapturing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                    RoundedCornerShape(12.dp)
+                )
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Row(
@@ -65,11 +86,12 @@ fun AssistantLiveScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
-                                .size(12.dp)
+                                .size(10.dp)
                                 .clip(CircleShape)
                                 .background(
                                     when {
-                                        isSpeaking -> MaterialTheme.colorScheme.primary
+                                        isSpeaking -> MaterialTheme.colorScheme.error
+                                        speechStatus.state == SpeechRecognitionState.LISTENING -> Color(0xFF3B82F6)
                                         audioMetrics.isCapturing -> Color(0xFF10B981)
                                         else -> Color.Gray
                                     }
@@ -79,15 +101,18 @@ fun AssistantLiveScreen(
                         Column {
                             Text(
                                 text = when {
-                                    isSpeaking -> "Anin Speaking (${activeProfile?.displayName})"
+                                    isSpeaking -> "Anin Speaking (${activeProfile?.displayName ?: "Default"})"
+                                    speechStatus.state == SpeechRecognitionState.LISTENING -> "Listening for Spoken Command..."
+                                    speechStatus.state == SpeechRecognitionState.PROCESSING -> "Recognizing Speech..."
                                     audioMetrics.isCapturing -> "Mic Active: Listening for 'Hey Anin'"
+                                    !isMicPermissionGranted -> "Mic Permission Denied"
                                     else -> "Anin Ready (Mic Paused)"
                                 },
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "AEC: ${if (audioCapabilities.hasAEC) "Active" else "N/A"} • NS: ${if (audioCapabilities.hasNoiseSuppressor) "Active" else "N/A"} • dBFS: ${audioMetrics.dBFS.toInt()} dB",
+                                text = "AEC: ${if (audioCapabilities.hasAEC) "Active" else "N/A"} • dBFS: ${audioMetrics.dBFS.toInt()} dB • Subham: ${if (isSubhamEnrolled) "Enrolled" else "Not Enrolled"}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -100,6 +125,43 @@ fun AssistantLiveScreen(
                             onCheckedChange = { viewModel.toggleAudioCapture(it) },
                             modifier = Modifier.testTag("mic_capture_switch")
                         )
+                    }
+                }
+
+                // Speech Recognizer Live Banner
+                AnimatedVisibility(visible = speechStatus.state == SpeechRecognitionState.LISTENING) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                            .padding(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Listening... Speak in English, বাংলা, or हिन्दी!",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                            IconButton(
+                                onClick = { viewModel.stopListeningForVoiceCommand() },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Cancel", modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        if (!speechStatus.lastRecognizedText.isNullOrBlank()) {
+                            Text(
+                                text = "Heard: \"${speechStatus.lastRecognizedText}\"",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
 
@@ -123,12 +185,12 @@ fun AssistantLiveScreen(
 
         // Live Audio Waveform
         VoiceWaveformVisualizer(
-            isActive = isSpeaking || audioMetrics.isSpeechDetected,
+            isActive = isSpeaking || audioMetrics.isSpeechDetected || speechStatus.state == SpeechRecognitionState.LISTENING,
             modifier = Modifier.padding(vertical = 4.dp),
             waveColor = if (isSpeaking) MaterialTheme.colorScheme.primary else Color(0xFF10B981)
         )
 
-        // Quick Command Chips
+        // Quick Command Chips (Unified with Real Actions)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -136,24 +198,22 @@ fun AssistantLiveScreen(
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             AssistChip(
+                onClick = { viewModel.sendAssistantMessage("open YouTube", simulateAsSubham) },
+                label = { Text("Open YouTube", style = MaterialTheme.typography.labelSmall) },
+                leadingIcon = { Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp)) }
+            )
+            AssistChip(
                 onClick = { viewModel.sendAssistantMessage("Hey Anin, battery status", simulateAsSubham) },
-                label = { Text("Battery", style = MaterialTheme.typography.labelSmall) }
+                label = { Text("Battery", style = MaterialTheme.typography.labelSmall) },
+                leadingIcon = { Icon(Icons.Default.BatteryFull, contentDescription = null, modifier = Modifier.size(14.dp)) }
+            )
+            AssistChip(
+                onClick = { viewModel.sendAssistantMessage("আজকের আবহাওয়া কেমন?", simulateAsSubham) },
+                label = { Text("বাংলা আবহাওয়া", style = MaterialTheme.typography.labelSmall) }
             )
             AssistChip(
                 onClick = { viewModel.sendAssistantMessage("Hey Anin, who am I?", simulateAsSubham) },
                 label = { Text("Who am I?", style = MaterialTheme.typography.labelSmall) }
-            )
-            AssistChip(
-                onClick = { viewModel.sendAssistantMessage("আজকের আবহাওয়া ও সময় কত?", simulateAsSubham) },
-                label = { Text("বাংলা সময়", style = MaterialTheme.typography.labelSmall) }
-            )
-            AssistChip(
-                onClick = { viewModel.sendAssistantMessage("अनিন, यूट्यूब खोलो", simulateAsSubham) },
-                label = { Text("यूट्यूब", style = MaterialTheme.typography.labelSmall) }
-            )
-            AssistChip(
-                onClick = { viewModel.sendAssistantMessage("Hey Anin, remind me to call Shubhrata", simulateAsSubham) },
-                label = { Text("Reminder", style = MaterialTheme.typography.labelSmall) }
             )
         }
 
@@ -170,28 +230,18 @@ fun AssistantLiveScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 32.dp),
+                            .padding(vertical = 32.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Default.Hearing,
-                                contentDescription = null,
-                                modifier = Modifier.size(48.dp),
-                                tint = MaterialTheme.colorScheme.outline
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Say \"Hey Anin\" or enter a command below",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                            Text(
-                                text = "Commands are executed ONLY when Subham is verified.",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                        }
+                        Text(
+                            text = if (isSubhamEnrolled) {
+                                "Say 'Hey Anin' or tap the microphone to give a command."
+                            } else {
+                                "Anin is ready. Complete Subham Voice Enrollment to activate authenticated voice control."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -201,55 +251,47 @@ fun AssistantLiveScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
-        // Speaker Verification Security Simulation Switch
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = if (simulateAsSubham) Icons.Default.VerifiedUser else Icons.Default.PersonOff,
-                    contentDescription = null,
-                    tint = if (simulateAsSubham) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Column {
-                    Text(
-                        text = if (simulateAsSubham) "Current Speaker: Subham (Authorized)" else "Current Speaker: Stranger (Unauthorized)",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = if (simulateAsSubham) Color(0xFF10B981) else MaterialTheme.colorScheme.error
-                    )
-                    Text(
-                        text = if (simulateAsSubham) "Verified Subham voice signature" else "Rule: Fails closed and remains 100% silent",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                }
-            }
-
-            Switch(
-                checked = simulateAsSubham,
-                onCheckedChange = { simulateAsSubham = it },
-                modifier = Modifier.testTag("speaker_auth_toggle")
-            )
-        }
-
-        // Input Field & Send Action
+        // Input Field & Action Buttons (Text + Real Microphone Speech Recognition)
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Push-to-Talk Real Microphone Button
+            IconButton(
+                onClick = {
+                    if (speechStatus.state == SpeechRecognitionState.LISTENING) {
+                        viewModel.stopListeningForVoiceCommand()
+                    } else {
+                        viewModel.startListeningForVoiceCommand()
+                    }
+                },
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (speechStatus.state == SpeechRecognitionState.LISTENING) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        }
+                    )
+                    .testTag("push_to_talk_btn")
+            ) {
+                Icon(
+                    imageVector = if (speechStatus.state == SpeechRecognitionState.LISTENING) Icons.Default.MicOff else Icons.Default.Mic,
+                    contentDescription = "Speak Command",
+                    tint = if (speechStatus.state == SpeechRecognitionState.LISTENING) Color.White else MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
             OutlinedTextField(
                 value = inputText,
                 onValueChange = { inputText = it },
-                placeholder = { Text("Command in English, বাংলা, हिन्दी...") },
+                placeholder = { Text("Or type command: 'open YouTube', etc.") },
                 modifier = Modifier
                     .weight(1f)
                     .testTag("chat_input_field"),
@@ -289,68 +331,100 @@ fun InteractionMessageCard(item: AssistantInteraction) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End
         ) {
-            Surface(
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
                 shape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp),
-                color = MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.widthIn(max = 300.dp)
+                modifier = Modifier.widthIn(max = 280.dp)
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = if (item.isSubhamAuthorized) Icons.Default.Verified else Icons.Default.ErrorOutline,
-                            contentDescription = null,
-                            tint = if (item.isSubhamAuthorized) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (item.isSubhamAuthorized) "Subham" else "Unknown / Unauthorized Speaker",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (item.isSubhamAuthorized) Color(0xFF10B981) else MaterialTheme.colorScheme.error
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(text = item.query, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = item.query,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Lang: ${item.detectedLanguage.displayName} • Subham: ${if (item.isSubhamAuthorized) "Authorized" else "Unverified"}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
-        // Assistant Response Bubble or Silent Rejection Notice
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Start
-        ) {
-            Surface(
-                shape = RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp),
-                color = if (item.isSilentlyIgnored) Color(0xFFFEF2F2) else MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.widthIn(max = 300.dp)
+        // Assistant Response Bubble
+        if (!item.isSilentlyIgnored) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Start
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = if (item.isSilentlyIgnored) Icons.Default.VolumeMute else Icons.Default.RecordVoiceOver,
-                            contentDescription = null,
-                            tint = if (item.isSilentlyIgnored) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    shape = RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp),
+                    modifier = Modifier.widthIn(max = 300.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.SmartToy,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Anin",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = if (item.isSilentlyIgnored) "Anin: Completely Silent" else "Anin • ${item.detectedLanguage.displayName}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (item.isSilentlyIgnored) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
+                            text = item.response,
+                            style = MaterialTheme.typography.bodyMedium
                         )
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = if (item.isSilentlyIgnored)
-                            "• External Audio: 100% Silent (No speech generated)\n• Reason: ${item.diagnosticReason}\n• Log: Non-sensitive AUTHENTICATION_FAILED recorded."
-                        else item.response,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (item.isSilentlyIgnored) Color(0xFF991B1B) else MaterialTheme.colorScheme.onSurface
-                    )
+                }
+            }
+        } else {
+            // Fail-closed silent rejection log indicator
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Start
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(0.9f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.VolumeOff,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "Fail-Closed: Anin Remained Silent",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            Text(
+                                text = "Unauthorized speaker. Zero speech output & zero command execution.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                    }
                 }
             }
         }

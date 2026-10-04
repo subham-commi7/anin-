@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -30,6 +31,10 @@ fun SubhamEnrollmentScreen(
     val isEnrolled by viewModel.isSubhamEnrolled.collectAsState()
     val metadata by viewModel.subhamMetadata.collectAsState()
     val completedSamples by viewModel.subhamEnrollmentSamples.collectAsState()
+    val isRecordingEnrollment by viewModel.isRecordingEnrollment.collectAsState()
+    val recordingSentenceIndex by viewModel.recordingSentenceIndex.collectAsState()
+    val recordingProgress by viewModel.enrollmentRecordingProgress.collectAsState()
+    val liveDbfs by viewModel.enrollmentLiveDbfs.collectAsState()
 
     val sentences = SubhamVoiceEnrollmentManager.ENROLLMENT_SENTENCES
     val completedIndices = completedSamples.map { it.sampleIndex }.toSet()
@@ -68,7 +73,7 @@ fun SubhamEnrollmentScreen(
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = "Subham's biometric voiceprint is encrypted in hardware-backed AndroidKeyStore. If an unauthorized person speaks, Anin remains completely silent.",
+                            text = "Strict Fail-Closed Policy: You must actually speak the guided sentences aloud into your microphone. Silent recordings are immediately rejected.",
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -98,29 +103,29 @@ fun SubhamEnrollmentScreen(
                             )
                             Text(
                                 text = if (isEnrolled) "Subham Enrolled & Verified" else "Enrollment Pending",
-                                style = MaterialTheme.typography.titleLarge,
+                                style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                         }
 
                         AssistChip(
-                            onClick = {},
+                            onClick = { },
                             label = { Text("${completedSamples.size} / 12 Samples") },
                             leadingIcon = {
                                 Icon(
                                     imageVector = if (isEnrolled) Icons.Default.CheckCircle else Icons.Default.Pending,
                                     contentDescription = null,
-                                    tint = if (isEnrolled) Color(0xFF10B981) else MaterialTheme.colorScheme.secondary,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(16.dp),
+                                    tint = if (isEnrolled) Color(0xFF10B981) else MaterialTheme.colorScheme.primary
                                 )
                             }
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     LinearProgressIndicator(
-                        progress = { (completedSamples.size / 12f).coerceIn(0f, 1f) },
+                        progress = { (completedSamples.size.toFloat() / 12f).coerceIn(0f, 1f) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(8.dp)
@@ -130,7 +135,7 @@ fun SubhamEnrollmentScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
-                        text = "• Hardware Encryption: AndroidKeyStore AES-256-GCM\n• Fail-Closed Policy: Uncertain speakers are rejected silently\n• Multi-Language Coverage: English, Bengali, Hindi phonetics",
+                        text = "• Hardware Encryption: AndroidKeyStore AES-256-GCM\n• Fail-Closed Policy: Silent or unauthorized speakers are rejected silently\n• Multi-Language Coverage: English, Bengali, Hindi phonetics",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -178,11 +183,15 @@ fun SubhamEnrollmentScreen(
         items(sentences, key = { it.index }) { sentence ->
             val isDone = completedIndices.contains(sentence.index)
             val sampleEntity = completedSamples.find { it.sampleIndex == sentence.index }
+            val isRecordingThis = isRecordingEnrollment && recordingSentenceIndex == sentence.index
 
             SentenceEnrollmentCard(
                 sentence = sentence,
                 isCompleted = isDone,
                 sample = sampleEntity,
+                isRecording = isRecordingThis,
+                recordingProgress = recordingProgress,
+                liveDbfs = liveDbfs,
                 onRecord = { viewModel.enrollSubhamSentenceSample(sentence) }
             )
         }
@@ -194,17 +203,28 @@ fun SentenceEnrollmentCard(
     sentence: com.example.core.auth.EnrollmentSentence,
     isCompleted: Boolean,
     sample: SubhamEnrollmentSampleEntity?,
+    isRecording: Boolean,
+    recordingProgress: Float,
+    liveDbfs: Float,
     onRecord: () -> Unit
 ) {
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = if (isCompleted) Color(0xFFF0FDF4) else MaterialTheme.colorScheme.surface
+            containerColor = when {
+                isRecording -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                isCompleted -> Color(0xFFF0FDF4)
+                else -> MaterialTheme.colorScheme.surface
+            }
         ),
         modifier = Modifier
             .fillMaxWidth()
             .border(
                 1.dp,
-                if (isCompleted) Color(0xFF10B981) else MaterialTheme.colorScheme.outlineVariant,
+                when {
+                    isRecording -> MaterialTheme.colorScheme.primary
+                    isCompleted -> Color(0xFF10B981)
+                    else -> MaterialTheme.colorScheme.outlineVariant
+                },
                 RoundedCornerShape(12.dp)
             )
     ) {
@@ -219,7 +239,13 @@ fun SentenceEnrollmentCard(
                         modifier = Modifier
                             .size(24.dp)
                             .clip(CircleShape)
-                            .background(if (isCompleted) Color(0xFF10B981) else MaterialTheme.colorScheme.secondary),
+                            .background(
+                                when {
+                                    isRecording -> MaterialTheme.colorScheme.error
+                                    isCompleted -> Color(0xFF10B981)
+                                    else -> MaterialTheme.colorScheme.secondary
+                                }
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -237,7 +263,7 @@ fun SentenceEnrollmentCard(
                     )
                 }
 
-                if (isCompleted && sample != null) {
+                if (isCompleted && sample != null && !isRecording) {
                     Badge(containerColor = Color(0xFF10B981)) {
                         Text("Quality: ${(sample.qualityScore * 100).toInt()}%", modifier = Modifier.padding(horizontal = 4.dp))
                     }
@@ -260,6 +286,36 @@ fun SentenceEnrollmentCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
+            // Recording live progress indicator
+            AnimatedVisibility(visible = isRecording) {
+                Column(modifier = Modifier.padding(top = 10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Recording real audio... Speak aloud!",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "${liveDbfs.toInt()} dBFS",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LinearProgressIndicator(
+                        progress = { recordingProgress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(12.dp))
 
             Row(
@@ -268,14 +324,29 @@ fun SentenceEnrollmentCard(
             ) {
                 Button(
                     onClick = onRecord,
+                    enabled = !isRecording,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isCompleted) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
+                        containerColor = when {
+                            isRecording -> MaterialTheme.colorScheme.error
+                            isCompleted -> MaterialTheme.colorScheme.secondary
+                            else -> MaterialTheme.colorScheme.primary
+                        }
                     ),
                     modifier = Modifier.testTag("record_subham_sample_${sentence.index}")
                 ) {
-                    Icon(Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Icon(
+                        imageVector = if (isRecording) Icons.Default.GraphicEq else Icons.Default.Mic,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(if (isCompleted) "Re-record Sample" else "Record Natural Sample")
+                    Text(
+                        when {
+                            isRecording -> "Recording (3s)..."
+                            isCompleted -> "Re-record (Speak aloud)"
+                            else -> "Record Sample (Speak aloud)"
+                        }
+                    )
                 }
             }
         }

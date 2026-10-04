@@ -11,6 +11,11 @@ import kotlin.math.sqrt
 object AudioQualityValidator {
 
     fun validateAudioSample(
+        samples: FloatArray,
+        sampleRate: Int = 16000
+    ): AudioQualityCheck = validateAudioSample(null, samples, sampleRate)
+
+    fun validateAudioSample(
         file: File?,
         samples: FloatArray,
         sampleRate: Int = 16000

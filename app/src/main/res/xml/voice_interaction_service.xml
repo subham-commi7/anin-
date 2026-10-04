@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:sessionService="com.example.core.service.AninVoiceInteractionSessionService"
+    android:recognitionService="com.example.core.service.AninRecognitionService"
+    android:supportsAssist="true"
+    android:supportsLocalInteraction="true" />

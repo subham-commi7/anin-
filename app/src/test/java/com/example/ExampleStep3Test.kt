@@ -1,23 +1,84 @@
 package com.example
 
+import com.example.core.audio.WakeWordEngine
 import com.example.core.device.AndroidCapabilityProvider
 import com.example.core.device.CapabilityExecutionStatus
+import com.example.core.voice.AudioQualityValidator
 import org.junit.Assert.*
 import org.junit.Test
+import kotlin.math.sin
 
 class ExampleStep3Test {
 
-    // Helper mock provider logic test without Android Context dependency
     private val financialKeywords = listOf(
         "upi", "gpay", "google pay", "phonepe", "paytm", "bhim",
         "send money", "transfer money", "bank transfer", "neft", "rtgs", "imps",
         "টাকা পাঠাও", "পেমেন্ট করো", "টাকা ট্রান্সফার", "ইউপিআই",
-        "पैसे भेजो", "पेमेंट करो", "बैंक ट्रांसफर", "यूपीआई"
+        "पैसे भेजो", "पेमेंट करो", "बैंक ट्रांसफर", "यूपीআই"
     )
 
     private fun checkFinancialSafety(query: String): Boolean {
         val q = query.lowercase()
         return financialKeywords.none { q.contains(it) }
+    }
+
+    @Test
+    fun testSilenceMustBeRejectedInEnrollment() {
+        val sampleRate = 16000
+        val silentBuffer = FloatArray(sampleRate * 3) // 3 seconds of silence
+
+        val check = AudioQualityValidator.validateAudioSample(null, silentBuffer, sampleRate)
+        assertFalse("Silent audio MUST be rejected for enrollment", check.isValid)
+        assertFalse("Speech must NOT be detected in silence", check.speechDetected)
+        assertTrue("Failure reasons must explain low signal or silence", check.failureReasons.isNotEmpty())
+    }
+
+    @Test
+    fun testLegitimateSpeechMustBeAcceptedInEnrollment() {
+        val sampleRate = 16000
+        val durationSec = 3.0
+        val totalSamples = (sampleRate * durationSec).toInt()
+        val speechBuffer = FloatArray(totalSamples)
+
+        // Realistic vocal formant simulation
+        for (i in speechBuffer.indices) {
+            val t = i.toDouble() / sampleRate
+            val f0 = sin(2 * Math.PI * 140.0 * t) * 0.4
+            val f1 = sin(2 * Math.PI * 280.0 * t) * 0.2
+            val env = sin(Math.PI * i / totalSamples).coerceIn(0.0, 1.0)
+            speechBuffer[i] = ((f0 + f1) * env).toFloat()
+        }
+
+        val check = AudioQualityValidator.validateAudioSample(null, speechBuffer, sampleRate)
+        assertTrue("Legitimate speech audio must be accepted", check.isValid)
+        assertTrue("Speech should be confirmed", check.speechDetected)
+        assertTrue("Quality score must be high", check.overallScore >= 0.70f)
+    }
+
+    @Test
+    fun testYouTubeIntentUrlFormatting() {
+        val defaultUrl = "https://www.youtube.com/"
+        assertEquals("https://www.youtube.com/", defaultUrl)
+
+        val query = "Bengali Rabindra Sangeet"
+        val expectedQueryUrl = "https://www.youtube.com/results?search_query=Bengali+Rabindra+Sangeet"
+        assertTrue(expectedQueryUrl.contains("results?search_query="))
+    }
+
+    @Test
+    fun testWakeWordEngineTriggerOnSpeechFrames() {
+        var wakeWordDetected = false
+        val engine = WakeWordEngine {
+            wakeWordDetected = true
+        }
+
+        // Supply loud acoustic frames
+        val loudFrame = FloatArray(1600) { 0.35f }
+        for (i in 0 until 10) {
+            engine.processAudioFrame(loudFrame)
+        }
+
+        assertTrue("Wake word callback should trigger on persistent acoustic frames", wakeWordDetected)
     }
 
     @Test
@@ -56,14 +117,12 @@ class ExampleStep3Test {
             Pair("Rahul Sen", "+91 98322 11223")
         )
 
-        // Query "Shubhrata" matches two contacts -> Ambiguous
         val matches = contacts.filter { it.first.lowercase().contains("shubhrata") }
         assertEquals(2, matches.size)
 
         val isAmbiguous = matches.size > 1
         assertTrue("Multiple matches must be flagged as ambiguous", isAmbiguous)
 
-        // Query "Rahul" matches one contact -> Unambiguous
         val rahulMatches = contacts.filter { it.first.lowercase().contains("rahul") }
         assertEquals(1, rahulMatches.size)
         assertEquals("Rahul Sen", rahulMatches.first().first)
@@ -89,19 +148,15 @@ class ExampleStep3Test {
 
     @Test
     fun testActionSafetyTiers() {
-        // LEVEL 0: Read-only (weather, battery, diagnostics)
         val readOnlySafetyLevel = 0
         assertEquals(0, readOnlySafetyLevel)
 
-        // LEVEL 1: Local reversible (save note, reminder)
         val localReversibleLevel = 1
         assertEquals(1, localReversibleLevel)
 
-        // LEVEL 2: External side-effect (calling, messaging)
         val externalSideEffectLevel = 2
         assertEquals(2, externalSideEffectLevel)
 
-        // LEVEL 3: Prohibited (financial)
         val prohibitedLevel = 3
         assertEquals(3, prohibitedLevel)
     }

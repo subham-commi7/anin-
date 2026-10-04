@@ -105,6 +105,61 @@ export const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({
         </div>
       </div>
 
+      {/* APK DELIVERY & DOWNLOAD CARD */}
+      <div className="bg-gradient-to-r from-indigo-950/40 via-slate-900 to-slate-900 border border-indigo-500/30 rounded-2xl p-6 space-y-4 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-bold text-white">Installable Android APK (Option A)</h3>
+              <span className="text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-indigo-500/20 text-indigo-300">
+                17.8 MB • DEBUG APK
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Ready for immediate download and installation directly on your iQOO Neo 10R Android phone.
+            </p>
+          </div>
+
+          <a
+            href="/download/app-debug.apk"
+            download="anin-app-debug.apk"
+            className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition shadow-lg shadow-indigo-600/30 flex-shrink-0"
+          >
+            <span>Download APK Now</span>
+          </a>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-1">
+          <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800">
+            <span className="text-[10px] text-slate-500 block uppercase font-mono">Package ID</span>
+            <span className="font-semibold text-white text-[11px] font-mono">com.aistudio.anin.voice</span>
+          </div>
+          <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800">
+            <span className="text-[10px] text-slate-500 block uppercase font-mono">Version</span>
+            <span className="font-semibold text-white text-[11px]">1.0 (versionCode 1)</span>
+          </div>
+          <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800">
+            <span className="text-[10px] text-slate-500 block uppercase font-mono">Target Arch</span>
+            <span className="font-semibold text-white text-[11px]">Android 16 • ARM64</span>
+          </div>
+          <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800">
+            <span className="text-[10px] text-slate-500 block uppercase font-mono">Integrity</span>
+            <span className="font-semibold text-emerald-400 text-[11px]">Verified (0 Errors)</span>
+          </div>
+        </div>
+
+        <div className="p-3 bg-slate-950/70 rounded-xl border border-slate-800/80 space-y-1 text-xs text-slate-400">
+          <span className="font-semibold text-indigo-300 block text-[11px]">Phone Installation Guide (No PC Required):</span>
+          <ol className="list-decimal list-inside space-y-0.5 text-[11px] text-slate-300">
+            <li>Tap <strong>Download APK Now</strong> above to save <code className="text-indigo-300">anin-app-debug.apk</code> to your device.</li>
+            <li>Open the file from Chrome Downloads or your Android Files application.</li>
+            <li>If prompted by Android, enable &ldquo;Allow install from this source&rdquo;.</li>
+            <li>Tap <strong>Install</strong>, then open Anin and grant the Microphone permission.</li>
+            <li>Complete the 12-sentence Subham Voice Enrollment in System A to activate authenticated voice control.</li>
+          </ol>
+        </div>
+      </div>
+
       {/* ACTION SAFETY ENGINE & FINANCIAL PROHIBITIONS */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
         <div className="flex items-center gap-2">

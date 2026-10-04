@@ -9,7 +9,8 @@ import {
   CheckCircle,
   AlertTriangle,
   Square,
-  KeyRound
+  KeyRound,
+  Download
 } from 'lucide-react';
 import { AssistantInteraction, EnrollmentMetadata } from './types';
 import { LocalStorageManager } from './core/storage';
@@ -42,23 +43,43 @@ export const App: React.FC = () => {
   const [isSpeaking, setIsSpeaking] = useState(false);
 
   useEffect(() => {
-    // Seed initial welcome interaction
+    // Seed initial truthful interaction based on real enrollment state
     const defaultProfile = LocalStorageManager.getActiveProfile();
-    setInteractions([
-      {
-        id: 'interaction_welcome',
-        timestamp: Date.now() - 30000,
-        query: 'Hey Anin',
-        detectedLanguage: 'en',
-        verifiedSubham: true,
-        confidenceScore: 0.94,
-        responseText:
-          'Subham, Anin Step 3 is active on your iQOO Neo 10R. Speech capture, intelligence layer, and Android capability provider are synchronized.',
-        voiceProfileUsed: defaultProfile.displayName,
-        isSilentRejection: false,
-        audioLatencyMs: 145
-      }
-    ]);
+    const meta = LocalStorageManager.getSubhamMetadata();
+
+    if (meta.isEnrolled) {
+      setInteractions([
+        {
+          id: 'interaction_welcome',
+          timestamp: Date.now() - 30000,
+          query: 'Hey Anin',
+          detectedLanguage: 'en',
+          verifiedSubham: true,
+          confidenceScore: 0.94,
+          responseText:
+            'Subham, Anin is active on your iQOO Neo 10R. Speech capture, intelligence layer, and Android capability provider are synchronized.',
+          voiceProfileUsed: defaultProfile.displayName,
+          isSilentRejection: false,
+          audioLatencyMs: 145
+        }
+      ]);
+    } else {
+      setInteractions([
+        {
+          id: 'interaction_welcome',
+          timestamp: Date.now() - 30000,
+          query: 'System Initialized',
+          detectedLanguage: 'en',
+          verifiedSubham: false,
+          confidenceScore: 0.0,
+          responseText:
+            'Anin is ready on your iQOO Neo 10R. Subham Voice Enrollment is required in System A before voice commands can be authenticated and executed.',
+          voiceProfileUsed: defaultProfile.displayName,
+          isSilentRejection: false,
+          audioLatencyMs: 50
+        }
+      ]);
+    }
 
     const unsubscribe = AudioPlaybackManager.subscribe((status) => {
       setIsSpeaking(status.isSpeaking);
@@ -112,6 +133,17 @@ export const App: React.FC = () => {
                 <span>Stop Spoken Voice</span>
               </button>
             )}
+
+            {/* Direct APK Download Link */}
+            <a
+              href="/download/app-debug.apk"
+              download="anin-app-debug.apk"
+              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-md shadow-indigo-600/30"
+              title="Download installable debug APK directly to your phone (17.8 MB)"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Download</span> APK
+            </a>
 
             {/* Subham Enrollment AssistChip */}
             <button

@@ -1,9 +1,12 @@
 package com.example
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -21,19 +24,33 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: AninViewModel by viewModels()
 
-    private val requestPermissionLauncher = registerForActivityResult(
+    val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val recordAudioGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: false
+        viewModel.onPermissionResult(recordAudioGranted)
+
         if (recordAudioGranted) {
             viewModel.refreshDeviceDiagnostics()
+            viewModel.startWakeWordListening()
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        checkAndRequestAudioPermissions()
+        // Initial permission sync
+        val hasMic = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        viewModel.onPermissionResult(hasMic)
+
+        if (!hasMic) {
+            requestAudioPermissions()
+        } else {
+            viewModel.startWakeWordListening()
+        }
 
         setContent {
             AninTheme {
@@ -41,13 +58,17 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    MainVoiceApp(viewModel = viewModel)
+                    MainVoiceApp(
+                        viewModel = viewModel,
+                        onRequestMicrophonePermission = { requestAudioPermissions() },
+                        onOpenAppSettings = { openAppSettings() }
+                    )
                 }
             }
         }
     }
 
-    private fun checkAndRequestAudioPermissions() {
+    fun requestAudioPermissions() {
         val permissionsToRequest = mutableListOf<String>()
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -62,6 +83,26 @@ class MainActivity : ComponentActivity() {
 
         if (permissionsToRequest.isNotEmpty()) {
             requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
+        }
+    }
+
+    fun openAppSettings() {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", packageName, null)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        startActivity(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val hasMic = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        viewModel.onPermissionResult(hasMic)
+        if (hasMic) {
+            viewModel.startWakeWordListening()
         }
     }
 }

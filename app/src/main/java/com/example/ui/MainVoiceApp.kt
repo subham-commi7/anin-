@@ -1,10 +1,14 @@
 package com.example.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -31,12 +35,15 @@ enum class AppNavDestination(
 @Composable
 fun MainVoiceApp(
     viewModel: AninViewModel,
+    onRequestMicrophonePermission: () -> Unit = {},
+    onOpenAppSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var currentDestination by remember { mutableStateOf(AppNavDestination.LIVE) }
     val statusMessage by viewModel.statusMessage.collectAsState()
     val isSubhamEnrolled by viewModel.isSubhamEnrolled.collectAsState()
     val isSpeaking by viewModel.audioPlaybackManager.isAssistantSpeaking.collectAsState()
+    val isMicPermissionGranted by viewModel.isMicrophonePermissionGranted.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(statusMessage) {
@@ -62,7 +69,7 @@ fun MainVoiceApp(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Personal Private Voice Assistant • Step 1+2+3",
+                            text = "Personal Private Voice Assistant • iQOO Neo 10R",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -141,19 +148,73 @@ fun MainVoiceApp(
             }
         }
     ) { paddingValues ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            when (currentDestination) {
-                AppNavDestination.LIVE -> AssistantLiveScreen(viewModel)
-                AppNavDestination.AUTH -> AuthenticationVoiceScreen(viewModel)
-                AppNavDestination.ENROLLMENT -> SubhamEnrollmentScreen(viewModel)
-                AppNavDestination.VOICE_STUDIO -> OutputVoiceStudioScreen(viewModel)
-                AppNavDestination.MEMORY -> PersonalMemoryScreen(viewModel)
-                AppNavDestination.PERMISSIONS -> PrivacySettingsScreen(viewModel)
-                AppNavDestination.SETTINGS -> PrivacySettingsScreen(viewModel)
+            // CRITICAL SECTION A: First-launch Onboarding / Permission Warning Banner
+            if (!isMicPermissionGranted) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.MicOff,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "Microphone Permission Required",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Anin needs microphone access to hear 'Hey Anin' and execute your voice commands. Without this permission, voice input cannot function.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = onRequestMicrophonePermission,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.error
+                                )
+                            ) {
+                                Text("Allow Microphone")
+                            }
+                            OutlinedButton(
+                                onClick = onOpenAppSettings
+                            ) {
+                                Text("Open App Settings")
+                            }
+                        }
+                    }
+                }
+            }
+
+            Box(modifier = Modifier.fillMaxSize().weight(1f)) {
+                when (currentDestination) {
+                    AppNavDestination.LIVE -> AssistantLiveScreen(viewModel)
+                    AppNavDestination.AUTH -> AuthenticationVoiceScreen(viewModel)
+                    AppNavDestination.ENROLLMENT -> SubhamEnrollmentScreen(viewModel)
+                    AppNavDestination.VOICE_STUDIO -> OutputVoiceStudioScreen(viewModel)
+                    AppNavDestination.MEMORY -> PersonalMemoryScreen(viewModel)
+                    AppNavDestination.PERMISSIONS -> PrivacySettingsScreen(viewModel)
+                    AppNavDestination.SETTINGS -> PrivacySettingsScreen(viewModel)
+                }
             }
         }
     }
