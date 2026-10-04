@@ -4,7 +4,12 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.core.assistant.AssistantBrain
+import com.example.core.assistant.AssistantInput
+import com.example.core.assistant.AssistantInputSource
 import com.example.core.assistant.AssistantInteraction
+import com.example.core.assistant.AssistantOperatingMode
+import com.example.core.assistant.GeminiDiagnosticsState
+import com.example.core.assistant.OrchestratorTrace
 import com.example.core.audio.AninAudioCaptureService
 import com.example.core.audio.AninSpeechRecognizer
 import com.example.core.audio.AudioCaptureManager
@@ -98,6 +103,17 @@ class AninViewModel(application: Application) : AndroidViewModel(application) {
     val audioMetrics: StateFlow<AudioCaptureMetrics> = audioCaptureManager.metrics
     val audioCapabilities: StateFlow<AudioHardwareCapabilities> = audioCaptureManager.capabilities
     val speechStatus: StateFlow<SpeechRecognitionStatus> = speechRecognizer.status
+
+    val orchestrator get() = assistantBrain.orchestrator
+    val operatingMode: StateFlow<AssistantOperatingMode> = orchestrator.operatingMode
+    val lastTrace: StateFlow<OrchestratorTrace?> = orchestrator.lastTrace
+    val recentTraces: StateFlow<List<OrchestratorTrace>> = orchestrator.recentTraces
+    val geminiDiagnostics: StateFlow<GeminiDiagnosticsState> = orchestrator.geminiApiClient.diagnostics
+
+    fun setOperatingMode(mode: AssistantOperatingMode) {
+        orchestrator.setOperatingMode(mode)
+        _statusMessage.value = "Anin intelligence mode switched to: ${mode.name}"
+    }
 
     private val _deviceDiagnostics = MutableStateFlow(assistantBrain.diagnosticsManager.getCompleteDiagnostics())
     val deviceDiagnostics: StateFlow<DeviceSystemDiagnostics> = _deviceDiagnostics.asStateFlow()
@@ -370,10 +386,6 @@ class AninViewModel(application: Application) : AndroidViewModel(application) {
             )
 
             _interactions.value = listOf(interaction) + _interactions.value
-
-            if (!interaction.isSilentlyIgnored && interaction.response.isNotBlank()) {
-                outputVoiceManager.speakText(interaction.response)
-            }
         }
     }
 

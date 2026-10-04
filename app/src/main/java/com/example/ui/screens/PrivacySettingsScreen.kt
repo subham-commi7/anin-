@@ -103,7 +103,127 @@ fun PrivacySettingsScreen(
         contentPadding = PaddingValues(top = 16.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // SECTION 1: PHYSICAL HARDWARE MICROPHONE TEST (SECTION P)
+        // SECTION 1: HYBRID INTELLIGENCE & GEMINI OBSERVABILITY
+        item {
+            val operatingMode by viewModel.operatingMode.collectAsState()
+            val geminiDiag by viewModel.geminiDiagnostics.collectAsState()
+            val lastTrace by viewModel.lastTrace.collectAsState()
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(14.dp))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Psychology, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Hybrid Intelligence Orchestrator",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Unified coordination of Local AI (Battery, YouTube, Maps, Settings, Reminders) + Gemini Intelligence (Reasoning, Routine, Q&A) through a single Safety Gate.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "Operating Mode:",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        com.example.core.assistant.AssistantOperatingMode.values().forEach { mode ->
+                            val isSelected = operatingMode == mode
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { viewModel.setOperatingMode(mode) },
+                                label = { Text(mode.name, style = MaterialTheme.typography.labelSmall) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "Gemini AI Diagnostics:",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "• Model: ${geminiDiag.modelName}\n" +
+                               "• Key Configured: ${if (geminiDiag.isConfigured) "YES (Masked in Secrets)" else "NOT CONFIGURED (.env)"}\n" +
+                               "• Last Status: ${geminiDiag.lastStatusCode ?: "No request yet"}\n" +
+                               "• Latency: ${geminiDiag.lastLatencyMs}ms\n" +
+                               "• Requests: ${geminiDiag.totalRequests} (Success: ${geminiDiag.successfulRequests}, Failed: ${geminiDiag.failedRequests})" +
+                               (if (geminiDiag.lastErrorMessage != null) "\n• Last Error: ${geminiDiag.lastErrorMessage}" else ""),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    AnimatedVisibility(visible = lastTrace != null) {
+                        lastTrace?.let { tr ->
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 8.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text(
+                                        text = "LAST ORCHESTRATOR TRACE",
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = "Input: \"${tr.transcript}\"\n" +
+                                               "Routed To: ${tr.routingTarget} (${tr.routingReason})\n" +
+                                               "Gemini Used: ${if (tr.geminiUsed) "YES (${tr.geminiLatencyMs ?: 0}ms)" else "NO (0 calls - Local Fast Path)"}\n" +
+                                               "Action: ${tr.actionExecuted ?: "None"} -> ${tr.actionResult ?: "N/A"}\n" +
+                                               "Duration: ${tr.totalDurationMs}ms",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Security Notice: Old API keys shown in screenshots should be revoked/rotated in Google Cloud Console. Secrets are never hardcoded.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+
+        // SECTION 2: PHYSICAL HARDWARE MICROPHONE TEST (SECTION P)
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),

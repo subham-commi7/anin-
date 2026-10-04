@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Anin</string>
+    <string name="app_name">Anin Assistant</string>
     <string name="display_title">Anin — Personal Private Voice Assistant</string>
     <string name="wake_word_phrase">Hey Anin</string>
 </resources>

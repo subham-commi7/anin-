@@ -8,6 +8,12 @@ interface PersonalMemoryDao {
     @Query("SELECT * FROM personal_memories ORDER BY createdAt DESC")
     fun getAllMemories(): Flow<List<PersonalMemoryEntity>>
 
+    @Query("SELECT * FROM personal_memories ORDER BY createdAt DESC")
+    suspend fun getMemoriesList(): List<PersonalMemoryEntity>
+
+    @Query("SELECT * FROM personal_memories WHERE content LIKE '%' || :query || '%' ORDER BY createdAt DESC")
+    suspend fun searchMemories(query: String): List<PersonalMemoryEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMemory(memory: PersonalMemoryEntity)
 
@@ -22,6 +28,9 @@ interface PersonalMemoryDao {
 interface ReminderDao {
     @Query("SELECT * FROM reminders WHERE isCompleted = 0 ORDER BY targetTimeMillis ASC")
     fun getAllReminders(): Flow<List<ReminderEntity>>
+
+    @Query("SELECT * FROM personal_reminders ORDER BY targetTimeMillis ASC")
+    suspend fun getRemindersList(): List<ReminderEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertReminder(reminder: ReminderEntity)
