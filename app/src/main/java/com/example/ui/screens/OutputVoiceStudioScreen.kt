@@ -1,7 +1,6 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,8 +12,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -23,9 +20,6 @@ import com.example.core.model.VoiceLanguage
 import com.example.core.model.VoiceSourceType
 import com.example.ui.AninViewModel
 import com.example.ui.components.VoiceWaveformVisualizer
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @Composable
 fun OutputVoiceStudioScreen(
@@ -133,7 +127,6 @@ fun OutputVoiceStudioScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Fallback Status Banner if applicable
                     if (isFallbackActive) {
                         Card(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
@@ -153,7 +146,6 @@ fun OutputVoiceStudioScreen(
                         }
                     }
 
-                    // Tech metadata chips
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -184,7 +176,6 @@ fun OutputVoiceStudioScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Waveform Visualizer
                     VoiceWaveformVisualizer(
                         isActive = isSpeaking,
                         waveColor = MaterialTheme.colorScheme.primary
@@ -192,7 +183,6 @@ fun OutputVoiceStudioScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Play / Stop Controls
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -402,7 +392,6 @@ fun VoiceProfileCard(
                 }
             }
 
-            // 10-day retention notice for custom recorded profiles
             if (profile.rawSamplePath != null && profile.rawSampleExpiresAt < Long.MAX_VALUE) {
                 val remainingMs = profile.rawSampleExpiresAt - System.currentTimeMillis()
                 val remainingDays = (remainingMs / (1000 * 60 * 60 * 24)).coerceAtLeast(0)

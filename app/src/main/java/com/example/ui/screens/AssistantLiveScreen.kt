@@ -148,7 +148,7 @@ fun AssistantLiveScreen(
                 label = { Text("বাংলা সময়", style = MaterialTheme.typography.labelSmall) }
             )
             AssistChip(
-                onClick = { viewModel.sendAssistantMessage("अनिन, यूट्यूब खोलो", simulateAsSubham) },
+                onClick = { viewModel.sendAssistantMessage("अनিন, यूट्यूब खोलो", simulateAsSubham) },
                 label = { Text("यूट्यूब", style = MaterialTheme.typography.labelSmall) }
             )
             AssistChip(

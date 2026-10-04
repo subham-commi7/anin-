@@ -1,8 +1,6 @@
 package com.example.ui
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -12,24 +10,21 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.ui.screens.AssistantLiveScreen
-import com.example.ui.screens.AuthenticationVoiceScreen
-import com.example.ui.screens.OutputVoiceStudioScreen
-import com.example.ui.screens.PersonalMemoryScreen
-import com.example.ui.screens.PrivacySettingsScreen
-import com.example.ui.screens.SubhamEnrollmentScreen
+import com.example.ui.screens.*
 
 enum class AppNavDestination(
+    val route: String,
     val title: String,
     val icon: ImageVector,
     val testTag: String
 ) {
-    ASSISTANT_LIVE("Anin Live", Icons.Default.Chat, "nav_assistant_live"),
-    SUBHAM_ENROLL("Enroll Subham", Icons.Default.Fingerprint, "nav_subham_enroll"),
-    AUTH_TEST("Security Lab", Icons.Default.Security, "nav_auth_voice"),
-    OUTPUT_VOICE("Voice Studio", Icons.Default.RecordVoiceOver, "nav_output_voice"),
-    MEMORY("Memory", Icons.Default.Psychology, "nav_personal_memory"),
-    DIAGNOSTICS("Diagnostics", Icons.Default.Shield, "nav_diagnostics")
+    LIVE("live", "Live", Icons.Default.Mic, "nav_live"),
+    AUTH("auth", "Security", Icons.Default.Security, "nav_auth"),
+    ENROLLMENT("enrollment", "Enroll", Icons.Default.Fingerprint, "nav_enroll"),
+    VOICE_STUDIO("studio", "Studio", Icons.Default.RecordVoiceOver, "nav_studio"),
+    MEMORY("memory", "Memory", Icons.Default.Psychology, "nav_memory"),
+    PERMISSIONS("permissions", "Permissions", Icons.Default.Key, "nav_permissions"),
+    SETTINGS("settings", "Diagnostics", Icons.Default.Settings, "nav_settings")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -38,10 +33,10 @@ fun MainVoiceApp(
     viewModel: AninViewModel,
     modifier: Modifier = Modifier
 ) {
-    var currentDestination by remember { mutableStateOf(AppNavDestination.ASSISTANT_LIVE) }
+    var currentDestination by remember { mutableStateOf(AppNavDestination.LIVE) }
     val statusMessage by viewModel.statusMessage.collectAsState()
     val isSubhamEnrolled by viewModel.isSubhamEnrolled.collectAsState()
-    val activeProfile by viewModel.activeProfile.collectAsState()
+    val isSpeaking by viewModel.audioPlaybackManager.isAssistantSpeaking.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(statusMessage) {
@@ -56,28 +51,60 @@ fun MainVoiceApp(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = "Anin Voice Assistant",
-                        fontWeight = FontWeight.Bold
-                    )
+                    Column {
+                        Text(
+                            text = "Anin",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Personal Private Voice Assistant • Step 1+2+3",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 },
                 actions = {
+                    if (isSpeaking) {
+                        FilledTonalButton(
+                            onClick = { viewModel.audioPlaybackManager.bargeInEmergencyStop() },
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            ),
+                            modifier = Modifier
+                                .padding(end = 4.dp)
+                                .testTag("top_bar_stop_button")
+                        ) {
+                            Icon(Icons.Default.Stop, contentDescription = "Emergency Stop", modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Stop", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+
                     AssistChip(
-                        onClick = { currentDestination = AppNavDestination.SUBHAM_ENROLL },
+                        onClick = { currentDestination = AppNavDestination.ENROLLMENT },
                         label = {
-                            Text(if (isSubhamEnrolled) "Subham: Enrolled" else "Subham: Enroll")
+                            Text(
+                                if (isSubhamEnrolled) "Subham: Enrolled" else "Subham: Enroll",
+                                style = MaterialTheme.typography.labelSmall
+                            )
                         },
                         leadingIcon = {
                             Icon(
-                                imageVector = if (isSubhamEnrolled) Icons.Default.Verified else Icons.Default.Warning,
+                                if (isSubhamEnrolled) Icons.Default.CheckCircle else Icons.Default.Warning,
                                 contentDescription = null,
-                                tint = if (isSubhamEnrolled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                tint = if (isSubhamEnrolled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(16.dp)
                             )
                         },
-                        modifier = Modifier.padding(end = 8.dp)
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .testTag("auth_status_chip")
                     )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -87,51 +114,46 @@ fun MainVoiceApp(
         },
         bottomBar = {
             NavigationBar(
-                modifier = Modifier.testTag("main_bottom_nav")
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.testTag("bottom_navigation_bar")
             ) {
-                AppNavDestination.entries.forEach { destination ->
+                AppNavDestination.values().forEach { destination ->
                     val selected = currentDestination == destination
                     NavigationBarItem(
                         selected = selected,
                         onClick = { currentDestination = destination },
                         icon = {
                             Icon(
-                                imageVector = destination.icon,
-                                contentDescription = destination.title
+                                destination.icon,
+                                contentDescription = destination.title,
+                                modifier = Modifier.size(20.dp)
                             )
                         },
-                        label = { Text(destination.title, style = MaterialTheme.typography.labelSmall) },
+                        label = {
+                            Text(
+                                destination.title,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        },
                         modifier = Modifier.testTag(destination.testTag)
                     )
                 }
             }
-        },
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
-    ) { innerPadding ->
+        }
+    ) { paddingValues ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(paddingValues)
         ) {
             when (currentDestination) {
-                AppNavDestination.ASSISTANT_LIVE -> {
-                    AssistantLiveScreen(viewModel = viewModel)
-                }
-                AppNavDestination.SUBHAM_ENROLL -> {
-                    SubhamEnrollmentScreen(viewModel = viewModel)
-                }
-                AppNavDestination.AUTH_TEST -> {
-                    AuthenticationVoiceScreen(viewModel = viewModel)
-                }
-                AppNavDestination.OUTPUT_VOICE -> {
-                    OutputVoiceStudioScreen(viewModel = viewModel)
-                }
-                AppNavDestination.MEMORY -> {
-                    PersonalMemoryScreen(viewModel = viewModel)
-                }
-                AppNavDestination.DIAGNOSTICS -> {
-                    PrivacySettingsScreen(viewModel = viewModel)
-                }
+                AppNavDestination.LIVE -> AssistantLiveScreen(viewModel)
+                AppNavDestination.AUTH -> AuthenticationVoiceScreen(viewModel)
+                AppNavDestination.ENROLLMENT -> SubhamEnrollmentScreen(viewModel)
+                AppNavDestination.VOICE_STUDIO -> OutputVoiceStudioScreen(viewModel)
+                AppNavDestination.MEMORY -> PersonalMemoryScreen(viewModel)
+                AppNavDestination.PERMISSIONS -> PrivacySettingsScreen(viewModel)
+                AppNavDestination.SETTINGS -> PrivacySettingsScreen(viewModel)
             }
         }
     }

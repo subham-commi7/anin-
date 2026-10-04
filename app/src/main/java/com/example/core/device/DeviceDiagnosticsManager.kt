@@ -1,5 +1,6 @@
 package com.example.core.device
 
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -10,101 +11,85 @@ import android.os.Build
 
 data class BatteryDiagnostics(
     val percentage: Int,
-    val isCharging: Boolean,
     val chargePlug: String,
     val temperatureCelsius: Float,
     val health: String,
-    val voltageMv: Int
+    val isCharging: Boolean
 )
 
 data class NetworkDiagnostics(
-    val isConnected: Boolean,
     val networkType: String,
-    val isMetered: Boolean,
-    val hasInternetCapability: Boolean
+    val isConnected: Boolean
 )
 
 data class DeviceSystemDiagnostics(
+    val model: String,
+    val androidVersion: String,
+    val memoryInfo: String,
     val battery: BatteryDiagnostics,
-    val network: NetworkDiagnostics,
-    val model: String = "iQOO Neo 10R (Snapdragon)",
-    val androidVersion: String = "Android 16 (API ${Build.VERSION.SDK_INT})",
-    val memoryInfo: String = "8 GB RAM / 128 GB Storage"
+    val network: NetworkDiagnostics
 )
 
 class DeviceDiagnosticsManager(private val context: Context) {
 
     fun getBatteryDiagnostics(): BatteryDiagnostics {
-        val ifilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-        val batteryStatus: Intent? = context.registerReceiver(null, ifilter)
+        val iFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+        val batteryStatus: Intent? = context.registerReceiver(null, iFilter)
 
-        val level = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
-        val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+        val level = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: 85
+        val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: 100
         val batteryPct = if (level >= 0 && scale > 0) (level * 100 / scale) else 85
 
         val status = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
         val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
                 status == BatteryManager.BATTERY_STATUS_FULL
 
-        val chargePlug = batteryStatus?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) ?: -1
-        val plugStr = when (chargePlug) {
-            BatteryManager.BATTERY_PLUGGED_USB -> "USB Cable"
-            BatteryManager.BATTERY_PLUGGED_AC -> "Fast AC Charger"
-            BatteryManager.BATTERY_PLUGGED_WIRELESS -> "Wireless Dock"
-            else -> if (isCharging) "Charging" else "Unplugged (Battery Power)"
+        val chargePlug = when (batteryStatus?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1)) {
+            BatteryManager.BATTERY_PLUGGED_USB -> "USB"
+            BatteryManager.BATTERY_PLUGGED_AC -> "AC Fast Charger"
+            BatteryManager.BATTERY_PLUGGED_WIRELESS -> "Wireless"
+            else -> if (isCharging) "Charging" else "Discharging"
         }
 
-        val tempTenths = batteryStatus?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 310
-        val tempCelsius = tempTenths / 10.0f
+        val rawTemp = batteryStatus?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 320) ?: 320
+        val tempCelsius = rawTemp / 10.0f
 
-        val healthCode = batteryStatus?.getIntExtra(BatteryManager.EXTRA_HEALTH, BatteryManager.BATTERY_HEALTH_GOOD)
-        val healthStr = when (healthCode) {
-            BatteryManager.BATTERY_HEALTH_GOOD -> "Optimal (Good)"
-            BatteryManager.BATTERY_HEALTH_OVERHEAT -> "Overheated"
-            BatteryManager.BATTERY_HEALTH_DEAD -> "Dead"
-            BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE -> "Over Voltage"
+        val health = when (batteryStatus?.getIntExtra(BatteryManager.EXTRA_HEALTH, BatteryManager.BATTERY_HEALTH_GOOD)) {
+            BatteryManager.BATTERY_HEALTH_GOOD -> "Good (Optimal)"
+            BatteryManager.BATTERY_HEALTH_OVERHEAT -> "Overheat"
             else -> "Normal"
         }
 
-        val voltage = batteryStatus?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 4100) ?: 4100
-
         return BatteryDiagnostics(
             percentage = batteryPct,
-            isCharging = isCharging,
-            chargePlug = plugStr,
+            chargePlug = chargePlug,
             temperatureCelsius = tempCelsius,
-            health = healthStr,
-            voltageMv = voltage
+            health = health,
+            isCharging = isCharging
         )
     }
 
     fun getNetworkDiagnostics(): NetworkDiagnostics {
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            ?: return NetworkDiagnostics(false, "Unknown", false, false)
+        val connectivityManager =
+            context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = connectivityManager.activeNetwork
+        val caps = connectivityManager.getNetworkCapabilities(network)
 
-        val activeNetwork = cm.activeNetwork
-        val caps = cm.getNetworkCapabilities(activeNetwork)
-        val isConnected = caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-
-        val typeStr = when {
-            caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true -> "High-Speed Wi-Fi"
-            caps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true -> "5G / Cellular"
-            caps?.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) == true -> "Ethernet"
-            else -> "Offline (Local Only)"
+        val isConnected = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        val type = when {
+            caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true -> "Wi-Fi (Encrypted)"
+            caps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true -> "Cellular 5G"
+            else -> if (isConnected) "Active Connection" else "Offline (Local Mode)"
         }
 
-        val isMetered = cm.isActiveNetworkMetered
-
-        return NetworkDiagnostics(
-            isConnected = isConnected,
-            networkType = typeStr,
-            isMetered = isMetered,
-            hasInternetCapability = isConnected
-        )
+        return NetworkDiagnostics(networkType = type, isConnected = isConnected)
     }
 
     fun getCompleteDiagnostics(): DeviceSystemDiagnostics {
         return DeviceSystemDiagnostics(
+            model = "iQOO Neo 10R (${Build.MANUFACTURER} ${Build.MODEL})",
+            androidVersion = "Android 16 (API ${Build.VERSION.SDK_INT})",
+            memoryInfo = "8 GB LPDDR5X RAM / 128 GB UFS",
             battery = getBatteryDiagnostics(),
             network = getNetworkDiagnostics()
         )

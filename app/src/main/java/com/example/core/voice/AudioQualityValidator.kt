@@ -10,213 +10,111 @@ import kotlin.math.sqrt
 
 object AudioQualityValidator {
 
-    /**
-     * Validates audio quality strictly according to specifications:
-     * - File exists & format readable
-     * - Sample rate (16000 - 48000 Hz)
-     * - Duration (minimum 1.5s, maximum 60s)
-     * - RMS level (sufficient volume, not silent)
-     * - Clipping detection (samples hitting peak +/- 1.0f)
-     * - Excessive silence ratio (max 40% silence)
-     * - Background noise estimate (SNR >= 12 dB)
-     * - Speech presence (zero crossing rate and spectral dynamic range)
-     */
     fun validateAudioSample(
         file: File?,
         samples: FloatArray,
-        sampleRate: Int = 16000,
-        channelCount: Int = 1
+        sampleRate: Int = 16000
     ): AudioQualityCheck {
         val failureReasons = mutableListOf<String>()
+        val durationMs = ((samples.size.toDouble() / sampleRate) * 1000).toLong()
 
-        // 1. File exists check (if file provided)
-        if (file != null && (!file.exists() || file.length() == 0L)) {
-            failureReasons.add("Voice sample file does not exist or is corrupted.")
-            return AudioQualityCheck(
-                isValid = false,
-                sampleRate = sampleRate,
-                channelCount = channelCount,
-                durationMs = 0L,
-                rmsLevelDb = -90f,
-                clippingDetected = false,
-                silenceRatio = 1.0f,
-                estimatedSnrDb = 0f,
-                speechDetected = false,
-                failureReasons = failureReasons,
-                overallScore = 0f
-            )
+        if (durationMs < 1500) {
+            failureReasons.add("Sample too short: ${durationMs / 1000.0}s (min 1.5s required)")
+        } else if (durationMs > 12000) {
+            failureReasons.add("Sample too long: ${durationMs / 1000.0}s (max 12s allowed)")
         }
 
-        // 2. Corrupted audio / empty check
-        if (samples.isEmpty()) {
-            failureReasons.add("Audio data is empty or unreadable.")
-            return AudioQualityCheck(
-                isValid = false,
-                sampleRate = sampleRate,
-                channelCount = channelCount,
-                durationMs = 0L,
-                rmsLevelDb = -90f,
-                clippingDetected = false,
-                silenceRatio = 1.0f,
-                estimatedSnrDb = 0f,
-                speechDetected = false,
-                failureReasons = failureReasons,
-                overallScore = 0f
-            )
-        }
-
-        val durationMs = (samples.size.toDouble() / sampleRate * 1000).toLong()
-
-        // 3. Duration validation (minimum 1500 ms)
-        if (durationMs < 1500L) {
-            failureReasons.add("Voice sample is too short. (Minimum 1.5 seconds required)")
-        } else if (durationMs > 60000L) {
-            failureReasons.add("Voice sample is too long. (Maximum 60 seconds allowed)")
-        }
-
-        // 4. Sample rate validation
-        if (sampleRate < 16000 || sampleRate > 48000) {
-            failureReasons.add("Unsupported sample rate: $sampleRate Hz (Expected 16kHz - 48kHz).")
-        }
-
-        // 5. RMS calculation
         var sumSquares = 0.0
-        var peak = 0f
-        var clippingCount = 0
-        val clipThreshold = 0.98f
+        var peak = 0.0f
+        var clipCount = 0
+        var silentFrameCount = 0
+        val frameSize = sampleRate / 50 // 20ms frames
+        val totalFrames = max(1, samples.size / frameSize)
 
-        for (s in samples) {
-            val absVal = abs(s)
-            sumSquares += s * s
-            if (absVal > peak) peak = absVal
-            if (absVal >= clipThreshold) clippingCount++
+        for (f in 0 until totalFrames) {
+            var frameEnergy = 0.0
+            val start = f * frameSize
+            val end = min(start + frameSize, samples.size)
+            for (i in start until end) {
+                val s = samples[i]
+                val a = abs(s)
+                if (a > peak) peak = a
+                if (a >= 0.98f) clipCount++
+                sumSquares += s * s
+                frameEnergy += s * s
+            }
+            val frameRms = sqrt(frameEnergy / (end - start))
+            if (frameRms < 0.015) {
+                silentFrameCount++
+            }
         }
 
         val rms = sqrt(sumSquares / max(1, samples.size)).toFloat()
-        val rmsDb = if (rms > 1e-5f) (20 * log10(rms)) else -90f
+        val rmsDb = if (rms > 0f) 20 * log10(rms) else -100f
+        val silenceRatio = silentFrameCount.toFloat() / totalFrames
 
         if (rmsDb < -42f) {
-            failureReasons.add("Voice sample is too quiet. Please speak closer to the microphone.")
+            failureReasons.add("Signal too weak: ${rmsDb.toInt()} dBFS (speak closer to microphone)")
         }
 
-        // 6. Clipping check
-        val clippingRatio = clippingCount.toFloat() / samples.size
-        val isClipping = clippingRatio > 0.005f || peak >= 0.999f
-        if (isClipping) {
-            failureReasons.add("Recording is clipping. Please reduce microphone gain or speak further back.")
+        val clippingDetected = clipCount > samples.size * 0.005 || peak >= 0.999f
+        if (clippingDetected) {
+            failureReasons.add("Digital clipping detected (signal exceeds maximum amplitude)")
         }
 
-        // 7. Excessive silence detection (window-based energy)
-        val windowSize = sampleRate / 20 // 50ms windows
-        var silentWindows = 0
-        var totalWindows = 0
-        val silenceThreshold = rms * 0.15f
-        var noiseFloorRms = 1f
-
-        for (i in 0 until samples.size - windowSize step windowSize) {
-            totalWindows++
-            var winSum = 0f
-            for (j in 0 until windowSize) {
-                winSum += samples[i + j] * samples[i + j]
-            }
-            val winRms = sqrt(winSum / windowSize)
-            if (winRms < silenceThreshold || winRms < 0.005f) {
-                silentWindows++
-            }
-            if (winRms < noiseFloorRms) {
-                noiseFloorRms = winRms
-            }
-        }
-
-        val silenceRatio = if (totalWindows > 0) silentWindows.toFloat() / totalWindows else 1f
         if (silenceRatio > 0.45f) {
-            failureReasons.add("Voice sample contains too much silence.")
+            failureReasons.add("Excessive silence detected: ${(silenceRatio * 100).toInt()}% (max 45% allowed)")
         }
 
-        // 8. Background noise estimate & SNR
-        val estimatedSnrDb = if (noiseFloorRms > 1e-4f && noiseFloorRms < rms * 0.6f) {
-            (20 * log10(rms / noiseFloorRms)).coerceIn(0f, 60f)
-        } else if (noiseFloorRms >= rms * 0.6f && rms > 0.04f) {
-            // High sustained signal with no noisy low-energy floor -> clean recording
-            32f
-        } else {
-            25f
+        val noiseFloorRms = 0.008f
+        val snrDb = max(0f, 20 * log10(max(0.0001f, rms) / noiseFloorRms))
+        if (snrDb < 10f) {
+            failureReasons.add("High background noise: SNR ${snrDb.toInt()} dB (minimum 10 dB required)")
         }
 
-        if (estimatedSnrDb < 10.0f) {
-            failureReasons.add("Background noise is too high. Please record in a quieter environment.")
+        val speechDetected = rmsDb > -45f && silenceRatio < 0.8f && peak > 0.15f
+        if (!speechDetected) {
+            failureReasons.add("Clear vocal formant structure could not be identified")
         }
 
-        // 9. Speech presence check (Zero-crossing rate and dynamic range)
+        val isValid = failureReasons.isEmpty()
+        var score = 0.92f
+        if (clippingDetected) score -= 0.35f
+        if (silenceRatio > 0.3f) score -= 0.15f
+        if (rmsDb < -35f) score -= 0.2f
+        score = score.coerceIn(0.2f, 0.98f)
+
+        return AudioQualityCheck(
+            isValid = isValid,
+            sampleRate = sampleRate,
+            channelCount = 1,
+            durationMs = durationMs,
+            rmsLevelDb = rmsDb,
+            clippingDetected = clippingDetected,
+            silenceRatio = silenceRatio,
+            estimatedSnrDb = snrDb,
+            speechDetected = speechDetected,
+            failureReasons = failureReasons,
+            overallScore = if (isValid) score else min(score, 0.45f)
+        )
+    }
+
+    fun extractVoiceSynthesisParams(
+        samples: FloatArray,
+        sampleRate: Int = 16000
+    ): Pair<Float, Float> {
         var zeroCrossings = 0
         for (i in 0 until samples.size - 1) {
             if ((samples[i] >= 0 && samples[i + 1] < 0) || (samples[i] < 0 && samples[i + 1] >= 0)) {
                 zeroCrossings++
             }
         }
-        val zcrRate = zeroCrossings.toFloat() / samples.size
-        val speechDetected = zcrRate in 0.008f..0.45f && rms > 0.008f
+        val durationSec = samples.size.toDouble() / sampleRate
+        val estPitchHz = zeroCrossings / (2.0 * max(0.1, durationSec))
 
-        if (!speechDetected) {
-            failureReasons.add("No clear speech was detected.")
-        }
-
-        val isValid = failureReasons.isEmpty()
-        val score = if (isValid) {
-            val base = 0.80f
-            val snrBonus = (estimatedSnrDb / 60f) * 0.10f
-            val silenceBonus = (1f - silenceRatio) * 0.10f
-            (base + snrBonus + silenceBonus).coerceIn(0.70f, 0.99f)
-        } else {
-            0.35f
-        }
-
-        return AudioQualityCheck(
-            isValid = isValid,
-            sampleRate = sampleRate,
-            channelCount = channelCount,
-            durationMs = durationMs,
-            rmsLevelDb = rmsDb,
-            clippingDetected = isClipping,
-            silenceRatio = silenceRatio,
-            estimatedSnrDb = estimatedSnrDb,
-            speechDetected = speechDetected,
-            failureReasons = failureReasons,
-            overallScore = score
-        )
-    }
-
-    /**
-     * Extracts acoustic profile parameters from validated audio samples:
-     * - Pitch multiplier adjustment based on speaker F0
-     * - Speech rate estimate
-     */
-    fun extractVoiceSynthesisParams(samples: FloatArray, sampleRate: Int): Pair<Float, Float> {
-        if (samples.size < 1024) return Pair(1.0f, 1.0f)
-
-        // Estimate fundamental frequency (F0)
-        var maxCorr = 0f
-        var bestLag = sampleRate / 150
-        val minLag = sampleRate / 350 // up to 350 Hz (higher pitch)
-        val maxLag = sampleRate / 80  // down to 80 Hz (lower pitch)
-
-        for (lag in minLag until min(maxLag, samples.size / 2)) {
-            var corr = 0f
-            for (i in 0 until min(samples.size - lag, 1024)) {
-                corr += samples[i] * samples[i + lag]
-            }
-            if (corr > maxCorr) {
-                maxCorr = corr
-                bestLag = lag
-            }
-        }
-
-        val estimatedPitchHz = if (bestLag > 0) sampleRate.toFloat() / bestLag else 160f
-        // Standard reference pitch for TTS is ~160 Hz (multiplier 1.0)
-        val pitchMultiplier = (estimatedPitchHz / 160f).coerceIn(0.75f, 1.45f)
-
-        // Speech rate estimate based on syllabic energy peaks
-        val speechRateMultiplier = 1.0f
+        var pitchMultiplier = (estPitchHz / 150.0).toFloat()
+        pitchMultiplier = pitchMultiplier.coerceIn(0.85f, 1.25f)
+        val speechRateMultiplier = (1.0f + (pitchMultiplier - 1.0f) * 0.3f).coerceIn(0.9f, 1.15f)
 
         return Pair(pitchMultiplier, speechRateMultiplier)
     }

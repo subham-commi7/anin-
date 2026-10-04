@@ -1,174 +1,108 @@
 package com.example.core.voice
 
 import android.content.Context
-import android.util.Log
 import com.example.core.database.AppDatabase
 import com.example.core.database.SecurityAuditLogEntity
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 class VoiceDataPrivacyManager(private val context: Context) {
 
     companion object {
-        private const val TAG = "VoicePrivacy"
-        val RETENTION_PERIOD_MS = TimeUnit.DAYS.toMillis(10) // 10 Days strict policy
-        private const val SAMPLES_DIR = "secure_voice_samples"
-        private const val SYNTHESIS_CACHE_DIR = "synthesis_cache"
+        const val RETENTION_PERIOD_MS = 10L * 24 * 60 * 60 * 1000 // 10 days
     }
 
     private val db = AppDatabase.getInstance(context)
 
     fun getSecureSamplesDirectory(): File {
-        val dir = File(context.filesDir, SAMPLES_DIR)
-        if (!dir.exists()) {
-            dir.mkdirs()
-        }
+        val dir = File(context.filesDir, "secure_voice_samples")
+        if (!dir.exists()) dir.mkdirs()
         return dir
     }
 
     fun getSynthesisCacheDirectory(): File {
-        val dir = File(context.cacheDir, SYNTHESIS_CACHE_DIR)
-        if (!dir.exists()) {
-            dir.mkdirs()
-        }
+        val dir = File(context.cacheDir, "synthesis_audio_cache")
+        if (!dir.exists()) dir.mkdirs()
         return dir
     }
 
-    /**
-     * Enforces the 10-day retention policy:
-     * Scans for raw recordings older than 10 days, deletes physical files, and updates DB records.
-     */
-    suspend fun enforceRetentionPolicy(): Int = withContext(Dispatchers.IO) {
+    suspend fun enforceRetentionPolicy(): Int {
         val now = System.currentTimeMillis()
-        val expiredProfiles = db.outputVoiceDao().getExpiredRawSamples(now)
-        var deletedCount = 0
+        val expiredProfiles = db.outputVoiceDao().getExpiredRawSampleProfiles(now)
+        var purgedCount = 0
 
         for (profile in expiredProfiles) {
             profile.rawSamplePath?.let { path ->
-                val file = File(path)
-                if (file.exists()) {
-                    file.delete()
-                    deletedCount++
-                }
+                val f = File(path)
+                if (f.exists()) f.delete()
+                purgedCount++
             }
             db.outputVoiceDao().clearRawSamplePath(profile.id)
+        }
+
+        if (purgedCount > 0) {
             db.securityAuditDao().logEvent(
                 SecurityAuditLogEntity(
-                    eventType = "RAW_SAMPLE_EXPIRED",
-                    details = "10-day retention limit reached for profile [${profile.displayName}]. Raw audio sample permanently purged.",
-                    diagnosticCode = "RETENTION_PURGE_SUCCESS"
+                    eventType = "RETENTION_PURGE_AUTOMATIC",
+                    details = "Automated 10-day retention policy: $purgedCount expired raw audio file(s) permanently erased.",
+                    diagnosticCode = "RETENTION_POLICY_ENFORCED"
                 )
             )
         }
-
-        // Also scan folder for orphaned raw sample files older than 10 days
-        val samplesDir = getSecureSamplesDirectory()
-        samplesDir.listFiles()?.forEach { file ->
-            if (now - file.lastModified() > RETENTION_PERIOD_MS) {
-                file.delete()
-                deletedCount++
-            }
-        }
-
-        if (deletedCount > 0) {
-            Log.i(TAG, "Purged $deletedCount expired raw audio files according to 10-day retention policy.")
-        }
-        deletedCount
+        return purgedCount
     }
 
-    /**
-     * Deletes a voice profile completely:
-     * 1. delete raw source recordings that belong to that profile
-     * 2. delete derived local voice data that can safely be deleted
-     * 3. remove profile metadata
-     * 4. clear cached synthesized audio
-     * 5. clear references from database
-     */
-    suspend fun deleteVoiceProfile(profileId: String): Boolean = withContext(Dispatchers.IO) {
-        val profile = db.outputVoiceDao().getProfileById(profileId) ?: return@withContext false
-
-        // 1. Delete raw source recording
-        profile.rawSamplePath?.let { path ->
-            val file = File(path)
-            if (file.exists()) file.delete()
+    suspend fun deleteAllRawSamples(): Int {
+        val dir = getSecureSamplesDirectory()
+        val files = dir.listFiles() ?: emptyArray()
+        val count = files.size
+        for (f in files) {
+            f.delete()
         }
+        db.securityAuditDao().logEvent(
+            SecurityAuditLogEntity(
+                eventType = "SAMPLES_PURGED_MANUALLY",
+                details = "User initiated purge: $count raw voice sample files permanently deleted.",
+                diagnosticCode = "PRIVACY_PURGE_SUCCESS"
+            )
+        )
+        return count
+    }
 
-        // 2. Delete profile-specific cached audio
-        val cacheDir = getSynthesisCacheDirectory()
-        cacheDir.listFiles()?.forEach { file ->
-            if (file.name.contains(profileId)) {
-                file.delete()
-            }
-        }
+    suspend fun deleteVoiceProfile(profileId: String): Boolean {
+        val profile = db.outputVoiceDao().getProfileById(profileId) ?: return false
+        profile.rawSamplePath?.let { File(it).delete() }
+        db.outputVoiceDao().deleteProfileById(profileId)
 
-        // 3. Remove from database
-        db.outputVoiceDao().deleteProfile(profileId)
-
-        // 4. Log event
         db.securityAuditDao().logEvent(
             SecurityAuditLogEntity(
                 eventType = "PROFILE_DELETED",
-                details = "Output voice profile [${profile.displayName}] and all associated audio data purged.",
+                details = "Voice profile [${profile.displayName}] and associated raw audio permanently deleted.",
                 diagnosticCode = "SEC_PROFILE_DELETED"
             )
         )
-
-        // If the deleted profile was active, activate default built-in profile
-        if (profile.isActive) {
-            db.outputVoiceDao().activateProfile("anin_default_neural")
-        }
-
-        true
+        return true
     }
 
-    /**
-     * Purges all raw voice samples from disk.
-     */
-    suspend fun deleteAllRawSamples(): Int = withContext(Dispatchers.IO) {
-        var count = 0
-        getSecureSamplesDirectory().listFiles()?.forEach {
-            if (it.delete()) count++
-        }
-        val allProfiles = db.outputVoiceDao().getAllProfiles()
-        // Clear paths
-        db.securityAuditDao().logEvent(
-            SecurityAuditLogEntity(
-                eventType = "MANUAL_RAW_PURGE",
-                details = "User manually requested deletion of all raw audio samples ($count files purged).",
-                diagnosticCode = "SEC_MANUAL_PURGE"
-            )
-        )
-        count
-    }
-
-    /**
-     * Clears all cached synthesized speech.
-     */
-    suspend fun clearSynthesisCache(): Long = withContext(Dispatchers.IO) {
-        var bytesFreed = 0L
-        getSynthesisCacheDirectory().listFiles()?.forEach {
-            bytesFreed += it.length()
-            it.delete()
-        }
-        bytesFreed
-    }
-
-    /**
-     * Deletes all custom profiles and their data, resetting to built-in.
-     */
-    suspend fun deleteAllCustomProfiles() = withContext(Dispatchers.IO) {
+    suspend fun deleteAllCustomProfiles() {
         deleteAllRawSamples()
-        clearSynthesisCache()
         db.outputVoiceDao().deleteAllCustomProfiles()
-        db.outputVoiceDao().activateProfile("anin_default_neural")
         db.securityAuditDao().logEvent(
             SecurityAuditLogEntity(
-                eventType = "ALL_CUSTOM_PROFILES_PURGED",
-                details = "All custom voice profiles and biometric voice models purged. Reset to built-in voices.",
-                diagnosticCode = "SEC_RESET_TO_BUILTIN"
+                eventType = "CUSTOM_PROFILES_PURGED",
+                details = "All custom voice profiles and biometric representations permanently deleted.",
+                diagnosticCode = "SEC_FACTORY_RESET"
             )
         )
+    }
+
+    fun clearSynthesisCache(): Long {
+        val dir = getSynthesisCacheDirectory()
+        val files = dir.listFiles() ?: emptyArray()
+        var bytesFreed = 0L
+        for (f in files) {
+            bytesFreed += f.length()
+            f.delete()
+        }
+        return bytesFreed
     }
 }

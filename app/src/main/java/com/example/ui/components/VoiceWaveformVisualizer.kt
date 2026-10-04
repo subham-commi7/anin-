@@ -1,11 +1,6 @@
 package com.example.ui.components
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -13,9 +8,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.unit.dp
 import kotlin.math.sin
 
@@ -24,14 +20,14 @@ fun VoiceWaveformVisualizer(
     isActive: Boolean,
     modifier: Modifier = Modifier,
     waveColor: Color = MaterialTheme.colorScheme.primary,
-    barCount: Int = 28
+    barCount: Int = 24
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "waveform_anim")
     val phase by infiniteTransition.animateFloat(
         initialValue = 0f,
-        targetValue = (2 * Math.PI).toFloat(),
+        targetValue = 6.28f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1200, easing = LinearEasing),
+            animation = tween(1200, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "phase"
@@ -40,34 +36,31 @@ fun VoiceWaveformVisualizer(
     Canvas(
         modifier = modifier
             .fillMaxWidth()
-            .height(56.dp)
+            .height(48.dp)
     ) {
         val width = size.width
         val height = size.height
-        val centerY = height / 2f
-        val step = width / (barCount + 1)
+        val spacing = width / barCount
+        val barWidth = spacing * 0.5f
 
         for (i in 0 until barCount) {
-            val x = step * (i + 1)
-            val normalizedIdx = i.toFloat() / barCount
-            val baseAmp = if (isActive) {
-                val wave1 = sin(phase + normalizedIdx * 4 * Math.PI).toFloat()
-                val wave2 = sin(phase * 1.5f + normalizedIdx * 2 * Math.PI).toFloat()
-                (Math.abs(wave1 * 0.6f + wave2 * 0.4f)).coerceIn(0.15f, 0.95f)
+            val x = i * spacing + spacing * 0.25f
+            val normX = i.toFloat() / barCount
+            val envelope = sin(normX * Math.PI).toFloat().coerceIn(0f, 1f)
+
+            val barHeight = if (isActive) {
+                val wave = (sin(phase + i * 0.5) * 0.6 + sin(phase * 1.5 + i * 0.3) * 0.4).toFloat()
+                (height * 0.85f * envelope * Math.abs(wave)).coerceAtLeast(6f)
             } else {
-                0.08f
+                6f
             }
 
-            val barHeight = height * baseAmp * 0.85f
-            val topY = centerY - barHeight / 2f
-            val bottomY = centerY + barHeight / 2f
-
-            drawLine(
-                color = if (isActive) waveColor else waveColor.copy(alpha = 0.3f),
-                start = Offset(x, topY),
-                end = Offset(x, bottomY),
-                strokeWidth = 6.dp.toPx(),
-                cap = StrokeCap.Round
+            val y = (height - barHeight) / 2f
+            drawRoundRect(
+                color = waveColor,
+                topLeft = Offset(x, y),
+                size = Size(barWidth, barHeight),
+                cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f)
             )
         }
     }

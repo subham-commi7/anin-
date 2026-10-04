@@ -1,6 +1,5 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -184,7 +183,6 @@ fun AuthenticationVoiceScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // 3 Test Simulation Buttons
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -222,7 +220,6 @@ fun AuthenticationVoiceScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Verification Output Result Card
                     testResult?.let { result ->
                         val isSuccess = result.isSubham
                         val cardBg = if (isSuccess) Color(0xFFECFDF5) else Color(0xFFFEF2F2)

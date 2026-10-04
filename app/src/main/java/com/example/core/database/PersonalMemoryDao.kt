@@ -1,10 +1,6 @@
 package com.example.core.database
 
-import androidx.room.Dao
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.Query
-import androidx.room.Update
+import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -24,20 +20,17 @@ interface PersonalMemoryDao {
 
 @Dao
 interface ReminderDao {
-    @Query("SELECT * FROM personal_reminders ORDER BY targetTimeMillis ASC")
+    @Query("SELECT * FROM reminders WHERE isCompleted = 0 ORDER BY targetTimeMillis ASC")
     fun getAllReminders(): Flow<List<ReminderEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertReminder(reminder: ReminderEntity)
 
-    @Update
-    suspend fun updateReminder(reminder: ReminderEntity)
+    @Query("UPDATE reminders SET isCompleted = 1 WHERE id = :id")
+    suspend fun markCompleted(id: Long)
 
-    @Query("DELETE FROM personal_reminders WHERE id = :id")
+    @Query("DELETE FROM reminders WHERE id = :id")
     suspend fun deleteReminderById(id: Long)
-
-    @Query("DELETE FROM personal_reminders")
-    suspend fun clearAllReminders()
 }
 
 @Dao
@@ -48,9 +41,9 @@ interface SubhamEnrollmentDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSample(sample: SubhamEnrollmentSampleEntity)
 
-    @Query("DELETE FROM subham_enrollment_samples")
-    suspend fun clearAllSamples()
-
     @Query("SELECT COUNT(*) FROM subham_enrollment_samples")
     suspend fun getSampleCount(): Int
+
+    @Query("DELETE FROM subham_enrollment_samples")
+    suspend fun clearAllSamples()
 }

@@ -1,6 +1,5 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -12,10 +11,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.core.database.SecurityAuditLogEntity
 import com.example.core.model.VoiceProcessingMode
@@ -109,7 +104,7 @@ fun PrivacySettingsScreen(
                         Text(
                             text = "Target Device Diagnostics",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                         )
                         IconButton(onClick = { viewModel.refreshDeviceDiagnostics() }) {
                             Icon(Icons.Default.Refresh, contentDescription = "Refresh Diagnostics")
@@ -150,7 +145,7 @@ fun PrivacySettingsScreen(
                     Text(
                         text = "Voice Processing Mode",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                     )
                     Text(
                         text = "Control how voice synthesis is processed on your device:",
@@ -176,7 +171,7 @@ fun PrivacySettingsScreen(
                                 Text(
                                     text = mode.label,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
                                 )
                                 Text(
                                     text = mode.description,
@@ -209,7 +204,7 @@ fun PrivacySettingsScreen(
                         Text(
                             text = "Voice Data Privacy & 10-Day Retention",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                         )
                     }
 
@@ -282,7 +277,7 @@ fun PrivacySettingsScreen(
                 Text(
                     text = "Security Audit Events (${auditLogs.size})",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                 )
                 Text(
                     text = "Zero sensitive audio stored in logs",
@@ -315,7 +310,7 @@ fun AuditLogCard(log: SecurityAuditLogEntity) {
                 Text(
                     text = log.eventType,
                     style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
                 Text(

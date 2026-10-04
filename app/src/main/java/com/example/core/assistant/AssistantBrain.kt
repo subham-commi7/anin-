@@ -49,7 +49,7 @@ class AssistantBrain(
         val normalized = query.trim().lowercase(Locale.ROOT)
 
         // 1. Check Barge-In / Immediate Stop
-        if (normalized.contains("stop") || normalized.contains("থেমে যাও") || normalized.contains("रुक जाओ")) {
+        if (normalized.contains("stop") || normalized.contains("থেমে যাও") || normalized.contains("रुक जाओ") || normalized.contains("থামো")) {
             val isAuthorized = if (simulatedAudioSample != null) {
                 val verification = speakerVerificationEngine.verifySpeaker(
                     simulatedAudioSample,
@@ -249,13 +249,12 @@ class AssistantBrain(
             else -> {
                 when (detectedLanguage) {
                     VoiceLanguage.BENGALI -> "নমস্কার শুভম! অনিন আপনার কথা শুনেছে: \"$query\"।"
-                    VoiceLanguage.HINDI -> "नमस्ते शुभम! अनिन ने आपका आदेश प्राप्त किया: \"$query\"।"
+                    VoiceLanguage.HINDI -> "नमस्ते शुभम! अनিন ने आपका आदेश प्राप्त किया: \"$query\"।"
                     VoiceLanguage.ENGLISH -> "Hello Subham! I received your command: \"$query\"."
                 }
             }
         }
 
-        // Synthesize and speak only for verified Subham!
         outputVoiceManager.speakText(responseText, detectedLanguage)
 
         AssistantInteraction(

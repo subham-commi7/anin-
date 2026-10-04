@@ -1,6 +1,5 @@
 package com.example.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -104,7 +103,6 @@ fun VoiceEnrollmentWizard(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Error Banner
                 state.errorMessage?.let { error ->
                     Card(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
@@ -131,7 +129,6 @@ fun VoiceEnrollmentWizard(
                     }
                 }
 
-                // STEP 1: EXPLANATION
                 if (state.step == 1) {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -160,7 +157,6 @@ fun VoiceEnrollmentWizard(
                     }
                 }
 
-                // STEP 2: CONSENT & AUTHORIZATION
                 if (state.step == 2) {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -211,7 +207,6 @@ fun VoiceEnrollmentWizard(
                     }
                 }
 
-                // STEP 3: RECORD OR IMPORT VOICE SAMPLE
                 if (state.step == 3) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
@@ -227,7 +222,6 @@ fun VoiceEnrollmentWizard(
                         )
 
                         Spacer(modifier = Modifier.height(8.dp))
-                        // Language tabs
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -242,7 +236,6 @@ fun VoiceEnrollmentWizard(
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
-                        // Prompt Sentence Box
                         Card(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)),
                             modifier = Modifier.fillMaxWidth()
@@ -264,7 +257,6 @@ fun VoiceEnrollmentWizard(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // Waveform animation
                         VoiceWaveformVisualizer(
                             isActive = state.isRecording || state.recordedAudioSamples != null,
                             waveColor = MaterialTheme.colorScheme.primary
@@ -272,7 +264,6 @@ fun VoiceEnrollmentWizard(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // Record Buttons
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -325,7 +316,6 @@ fun VoiceEnrollmentWizard(
                     }
                 }
 
-                // STEP 4: AUDIO QUALITY VALIDATION
                 if (state.step == 4) {
                     val quality = state.qualityCheck
                     Column(modifier = Modifier.fillMaxWidth()) {
@@ -392,7 +382,6 @@ fun VoiceEnrollmentWizard(
                     }
                 }
 
-                // STEP 5: PROFILE CREATION & ACTIVATION
                 if (state.step == 5) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text(

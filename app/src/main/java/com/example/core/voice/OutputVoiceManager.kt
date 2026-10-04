@@ -86,22 +86,15 @@ class OutputVoiceManager(
         onlineEngine.loadActiveVoiceProfile(profile)
     }
 
-    /**
-     * Synthesizes and speaks text using active voice and honest fallback policy.
-     */
     suspend fun speakText(
         text: String,
         forcedLanguage: VoiceLanguage? = null
     ): SynthesisResult = withContext(Dispatchers.Main) {
         val detectedLanguage = forcedLanguage ?: VoiceLanguage.detectLanguage(text)
         val mode = _processingMode.value
-        val profile = _activeProfile.value
-
-        Log.i(TAG, "Initiating speech synthesis. Lang: ${detectedLanguage.displayName}, Mode: ${mode.name}")
 
         _isFallbackActive.value = false
 
-        // Determine which engine to attempt first
         val primaryResult: SynthesisResult = when (mode) {
             VoiceProcessingMode.ONLINE_ONLY -> {
                 onlineEngine.synthesizeText(text, detectedLanguage)
@@ -110,7 +103,6 @@ class OutputVoiceManager(
                 localEngine.synthesizeText(text, detectedLanguage)
             }
             VoiceProcessingMode.AUTOMATIC -> {
-                // If local engine is available, use it directly
                 val localAvailability = localEngine.reportAvailability()
                 if (localAvailability is EngineAvailability.Available) {
                     localEngine.synthesizeText(text, detectedLanguage)
@@ -122,20 +114,14 @@ class OutputVoiceManager(
             }
         }
 
-        // If primary succeeded, record and return
-        if (primaryResult.isSuccess) {
+        if (primaryResult.isSuccess && !primaryResult.isFallback) {
             _latestSynthesisResult.value = primaryResult
             return@withContext primaryResult
         }
 
-        // If primary failed or language unsupported in custom voice:
-        // Execute Fallback Policy:
-        Log.w(TAG, "Primary synthesis failed: ${primaryResult.error?.code}. Applying system fallback voice.")
-
         _isFallbackActive.value = true
         val fallbackVoiceName = "System Standard (Fallback)"
 
-        // Fallback always synthesizes in target language or English safely
         val fallbackResult = localEngine.synthesizeText(text, VoiceLanguage.ENGLISH)
         val finalResult = fallbackResult.copy(
             isFallback = true,
@@ -145,12 +131,11 @@ class OutputVoiceManager(
 
         _latestSynthesisResult.value = finalResult
 
-        // Log fallback event in security audit
         withContext(Dispatchers.IO) {
             db.securityAuditDao().logEvent(
                 SecurityAuditLogEntity(
                     eventType = "FALLBACK_ACTIVATED",
-                    details = "Primary output voice failed (${primaryResult.error?.code}). Fallback system voice activated.",
+                    details = "Primary output voice failed. Fallback system voice activated.",
                     diagnosticCode = "OUTPUT_VOICE_FALLBACK_ACTIVATED"
                 )
             )

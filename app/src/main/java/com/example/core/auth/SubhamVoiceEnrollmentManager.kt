@@ -11,7 +11,6 @@ import com.example.core.voice.AudioQualityValidator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
-import java.util.concurrent.TimeUnit
 import kotlin.math.sin
 
 data class EnrollmentSentence(
@@ -47,7 +46,7 @@ class SubhamVoiceEnrollmentManager(
             EnrollmentSentence(9, VoiceLanguage.HINDI, "नमस्ते अनिन, मैं शुभम हूँ। आज का दिन कैसा रहेगा?", "सामान्य बातचीत की गति", "स्पर्श और अंतःस्थ व्यंजन"),
             EnrollmentSentence(10, VoiceLanguage.HINDI, "मेरी सभी ज़रूरी बैठकें और कार्य मुझे समय पर याद दिलाना।", "सहज और स्पष्ट गति", "महाप्राण एवं नासिक्य ध्वनियाँ"),
             EnrollmentSentence(11, VoiceLanguage.HINDI, "फ़ोन की बैटरी, नेटवर्क और सुरक्षा स्थिति की जाँच करो।", "दैनिक गति", "विराम और स्वर का उतार-चढ़ाव"),
-            EnrollmentSentence(12, VoiceLanguage.HINDI, "अनिन, अभी रुक जाओ और नया आवश्यक कार्य शुरू करो।", "आधिकारिक एवं स्पष्ट लहजा", "कंठ्य व तालव्य ध्वनियाँ")
+            EnrollmentSentence(12, VoiceLanguage.HINDI, "अनিন, अभी रुक जाओ और नया आवश्यक कार्य शुरू करो।", "आधिकारिक एवं स्पष्ट लहजा", "कंठ्य व तालव्य ध्वनियाँ")
         )
     }
 
@@ -84,7 +83,6 @@ class SubhamVoiceEnrollmentManager(
             return@withContext false
         }
 
-        // Generate unified biometric embedding from all collected samples
         val samples = mutableListOf<FloatArray>()
         val sampleRate = 16000
         val durationSec = 2.0

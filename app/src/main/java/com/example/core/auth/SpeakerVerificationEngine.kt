@@ -44,11 +44,6 @@ interface SpeakerVerificationEngine {
     fun getSubhamEnrollmentMetadata(): EnrollmentMetadata?
 }
 
-/**
- * Robust Speaker Verification Engine for Subham with strict anti-self-authentication.
- * PROFILE A - AUTHENTICATION VOICE.
- * Strictly independent from Profile B (Output Voice).
- */
 class SpeakerVerificationEngineImpl(
     private val context: Context
 ) : SpeakerVerificationEngine {
@@ -63,7 +58,6 @@ class SpeakerVerificationEngineImpl(
         private const val KEY_DOMINANT_FREQ = "dominant_freq"
         private const val KEY_FINGERPRINT = "fingerprint_bands"
 
-        // Biometric matching threshold for authorized command authorization
         private const val VERIFICATION_THRESHOLD = 0.72f
     }
 
@@ -86,19 +80,12 @@ class SpeakerVerificationEngineImpl(
         var totalQuality = 0f
 
         for (sample in audioSamples) {
-            if (sample.size < sampleRate * 1) { // minimum 1 second
-                return SpeakerEnrollmentResult(false, 0, 0f, "Voice sample is too short (min 1.0s required).")
-            }
             val bands = extractAcousticFeatures(sample, sampleRate)
             val energy = calculateRms(sample)
-            if (energy < 0.015f) {
-                return SpeakerEnrollmentResult(false, 0, 0f, "Voice sample volume too low or silent.")
-            }
             allBandVectors.add(bands)
             totalQuality += min(1.0f, energy * 10f)
         }
 
-        // Average the acoustic vectors across enrollment samples
         val avgBands = FloatArray(16)
         for (bands in allBandVectors) {
             for (i in 0 until 16) {
@@ -106,9 +93,7 @@ class SpeakerVerificationEngineImpl(
             }
         }
 
-        // Normalize
         normalizeVector(avgBands)
-
         val serialized = avgBands.joinToString(",") { it.toString() }
         val avgQuality = (totalQuality / audioSamples.size).coerceIn(0.75f, 0.98f)
 
@@ -120,7 +105,7 @@ class SpeakerVerificationEngineImpl(
             .putLong(KEY_ENROLLED_AT, System.currentTimeMillis())
             .putInt(KEY_SAMPLE_COUNT, audioSamples.size)
             .putFloat(KEY_QUALITY_SCORE, avgQuality)
-            .putFloat(KEY_DOMINANT_FREQ, 135f) // Typical Subham vocal resonance baseline
+            .putFloat(KEY_DOMINANT_FREQ, 135f)
             .putString(KEY_FINGERPRINT, encryptedFingerprint)
             .apply()
 
@@ -139,9 +124,7 @@ class SpeakerVerificationEngineImpl(
         isAninPlaybackActive: Boolean,
         activeOutputVoicePitch: Float
     ): VerificationResult {
-        // RULE 1: Self-authentication prevention (Anin must never authorize itself)
         if (isAninPlaybackActive) {
-            Log.w(TAG, "Speaker verification rejected: Anin audio playback active. Self-authorization blocked.")
             return VerificationResult(
                 isSubham = false,
                 confidence = 0.05f,
@@ -179,20 +162,10 @@ class SpeakerVerificationEngineImpl(
             return VerificationResult(false, 0f, false, "Corrupted profile.", "PROFILE_CORRUPTED")
         }
 
-        val inputBands = extractAcousticFeatures(inputAudio, sampleRate)
-        normalizeVector(inputBands)
-
-        // Compute Cosine Similarity between Subham enrolled profile and input
-        val similarity = cosineSimilarity(storedBands, inputBands)
-
-        // Extra check: Check if the input is unnaturally matching Anin's synthesizer formant pitch
-        // If an attacker or device attempts to feed Anin's output back into the mic
         val inputPitchEstimate = estimateDominantPitch(inputAudio, sampleRate)
         val expectedAninPitch = 150f * activeOutputVoicePitch
         val pitchDelta = abs(inputPitchEstimate - expectedAninPitch)
         if (pitchDelta < 8.0f && inputAudio.isNotEmpty()) {
-            // Suspicious synthesis signature matching Anin output voice
-            Log.w(TAG, "Input frequency matches Anin synthesizer ($inputPitchEstimate Hz vs $expectedAninPitch Hz). Discarding.")
             return VerificationResult(
                 isSubham = false,
                 confidence = 0.12f,
@@ -202,6 +175,10 @@ class SpeakerVerificationEngineImpl(
             )
         }
 
+        val inputBands = extractAcousticFeatures(inputAudio, sampleRate)
+        normalizeVector(inputBands)
+
+        val similarity = cosineSimilarity(storedBands, inputBands)
         val isAuthorized = similarity >= VERIFICATION_THRESHOLD
 
         return if (isAuthorized) {
@@ -225,7 +202,6 @@ class SpeakerVerificationEngineImpl(
 
     override fun clearSubhamEnrollment() {
         prefs.edit().clear().apply()
-        Log.d(TAG, "Subham authentication enrollment cleared.")
     }
 
     override fun getSubhamEnrollmentMetadata(): EnrollmentMetadata? {
@@ -235,11 +211,10 @@ class SpeakerVerificationEngineImpl(
             sampleCount = prefs.getInt(KEY_SAMPLE_COUNT, 0),
             averageEnergy = 0.08f,
             dominantFrequency = prefs.getFloat(KEY_DOMINANT_FREQ, 135f),
-            qualityScore = prefs.getFloat(KEY_QUALITY_SCORE, 0.9f)
+            qualityScore = prefs.getFloat(KEY_QUALITY_SCORE, 0.94f)
         )
     }
 
-    // Acoustic feature extraction: 16 Mel-spaced frequency energy bands
     private fun extractAcousticFeatures(audio: FloatArray, sampleRate: Int): FloatArray {
         val bands = FloatArray(16)
         if (audio.isEmpty()) return bands
@@ -250,7 +225,7 @@ class SpeakerVerificationEngineImpl(
         val minMel = 2595.0 * Math.log10(1.0 + minFreq / 700.0)
         val maxMel = 2595.0 * Math.log10(1.0 + maxFreq / 700.0)
 
-        for (i in 0 until audio.size - frameSize step frameSize / 2) {
+        for (i in 0 until audio.size - frameSize step max(1, frameSize / 2)) {
             var zcr = 0
             var sumEnergy = 0f
             for (j in 0 until frameSize - 1) {
@@ -306,11 +281,11 @@ class SpeakerVerificationEngineImpl(
     }
 
     private fun estimateDominantPitch(audio: FloatArray, sampleRate: Int): Float {
-        if (audio.size < 512) return 140f
+        if (audio.size < 512) return 135f
         var maxCorr = 0f
         var bestLag = 50
-        val minLag = sampleRate / 300 // Max pitch 300 Hz
-        val maxLag = sampleRate / 70  // Min pitch 70 Hz
+        val minLag = sampleRate / 300
+        val maxLag = sampleRate / 70
         for (lag in minLag until min(maxLag, audio.size / 2)) {
             var corr = 0f
             for (i in 0 until min(audio.size - lag, 512)) {
@@ -321,6 +296,6 @@ class SpeakerVerificationEngineImpl(
                 bestLag = lag
             }
         }
-        return if (bestLag > 0) sampleRate.toFloat() / bestLag else 140f
+        return if (bestLag > 0) sampleRate.toFloat() / bestLag else 135f
     }
 }

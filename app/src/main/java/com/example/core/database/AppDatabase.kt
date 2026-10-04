@@ -41,67 +41,67 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                     .fallbackToDestructiveMigration()
                     .addCallback(object : Callback() {
-                    override fun onCreate(db: SupportSQLiteDatabase) {
-                        super.onCreate(db)
-                        // Seed default built-in voice profiles
-                        CoroutineScope(Dispatchers.IO).launch {
-                            val dao = getInstance(context).outputVoiceDao()
-                            val now = System.currentTimeMillis()
-                            val defaultProfile = OutputVoiceProfileEntity(
-                                id = "anin_default_neural",
-                                displayName = "Anin Crystal (Built-in)",
-                                sourceType = VoiceSourceType.BUILT_IN,
-                                createdAt = now,
-                                updatedAt = now,
-                                rawSamplePath = null,
-                                rawSampleExpiresAt = Long.MAX_VALUE,
-                                pitchMultiplier = 1.05f,
-                                speechRateMultiplier = 1.0f,
-                                baseVoiceKey = "anin_crystal",
-                                supportedLanguages = "en,bn,hi",
-                                isLocalAvailable = true,
-                                isOnlineAvailable = false,
-                                isActive = true,
-                                consentConfirmed = true,
-                                consentConfirmedAt = now,
-                                sampleDurationMs = 0L,
-                                qualityScore = 0.95f,
-                                modelVersion = "builtin-v1.0"
-                            )
-                            val warmProfile = OutputVoiceProfileEntity(
-                                id = "anin_warm_acoustic",
-                                displayName = "Anin Horizon (Warm)",
-                                sourceType = VoiceSourceType.BUILT_IN,
-                                createdAt = now,
-                                updatedAt = now,
-                                rawSamplePath = null,
-                                rawSampleExpiresAt = Long.MAX_VALUE,
-                                pitchMultiplier = 0.92f,
-                                speechRateMultiplier = 0.95f,
-                                baseVoiceKey = "anin_warm",
-                                supportedLanguages = "en,bn,hi",
-                                isLocalAvailable = true,
-                                isOnlineAvailable = false,
-                                isActive = false,
-                                consentConfirmed = true,
-                                consentConfirmedAt = now,
-                                sampleDurationMs = 0L,
-                                qualityScore = 0.94f,
-                                modelVersion = "builtin-v1.0"
-                            )
-                            dao.insertProfile(defaultProfile)
-                            dao.insertProfile(warmProfile)
-
-                            val auditDao = getInstance(context).securityAuditDao()
-                            auditDao.logEvent(
-                                SecurityAuditLogEntity(
-                                    eventType = "SYSTEM_INITIALIZED",
-                                    details = "Built-in Anin voice profiles provisioned with local synthesis."
+                        override fun onCreate(db: SupportSQLiteDatabase) {
+                            super.onCreate(db)
+                            CoroutineScope(Dispatchers.IO).launch {
+                                val dao = getInstance(context).outputVoiceDao()
+                                val now = System.currentTimeMillis()
+                                val defaultProfile = OutputVoiceProfileEntity(
+                                    id = "anin_default_neural",
+                                    displayName = "Anin Crystal (Built-in)",
+                                    sourceType = VoiceSourceType.BUILT_IN,
+                                    createdAt = now,
+                                    updatedAt = now,
+                                    rawSamplePath = null,
+                                    rawSampleExpiresAt = Long.MAX_VALUE,
+                                    pitchMultiplier = 1.05f,
+                                    speechRateMultiplier = 1.0f,
+                                    baseVoiceKey = "anin_crystal",
+                                    supportedLanguages = "en,bn,hi",
+                                    isLocalAvailable = true,
+                                    isOnlineAvailable = false,
+                                    isActive = true,
+                                    consentConfirmed = true,
+                                    consentConfirmedAt = now,
+                                    sampleDurationMs = 0L,
+                                    qualityScore = 0.95f,
+                                    modelVersion = "builtin-v1.0"
                                 )
-                            )
+                                val warmProfile = OutputVoiceProfileEntity(
+                                    id = "anin_warm_acoustic",
+                                    displayName = "Anin Horizon (Warm)",
+                                    sourceType = VoiceSourceType.BUILT_IN,
+                                    createdAt = now,
+                                    updatedAt = now,
+                                    rawSamplePath = null,
+                                    rawSampleExpiresAt = Long.MAX_VALUE,
+                                    pitchMultiplier = 0.92f,
+                                    speechRateMultiplier = 0.95f,
+                                    baseVoiceKey = "anin_warm",
+                                    supportedLanguages = "en,bn,hi",
+                                    isLocalAvailable = true,
+                                    isOnlineAvailable = false,
+                                    isActive = false,
+                                    consentConfirmed = true,
+                                    consentConfirmedAt = now,
+                                    sampleDurationMs = 0L,
+                                    qualityScore = 0.94f,
+                                    modelVersion = "builtin-v1.0"
+                                )
+                                dao.insertProfile(defaultProfile)
+                                dao.insertProfile(warmProfile)
+
+                                val auditDao = getInstance(context).securityAuditDao()
+                                auditDao.logEvent(
+                                    SecurityAuditLogEntity(
+                                        eventType = "SYSTEM_INITIALIZED",
+                                        details = "Built-in Anin voice profiles provisioned with local synthesis.",
+                                        diagnosticCode = "SYS_READY"
+                                    )
+                                )
+                            }
                         }
-                    }
-                }).build()
+                    }).build()
                 INSTANCE = instance
                 instance
             }

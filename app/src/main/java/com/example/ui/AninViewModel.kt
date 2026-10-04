@@ -26,7 +26,6 @@ import com.example.core.database.SecurityAuditLogEntity
 import com.example.core.database.SubhamEnrollmentSampleEntity
 import com.example.core.device.DeviceSystemDiagnostics
 import com.example.core.model.AudioQualityCheck
-import com.example.core.model.SynthesisResult
 import com.example.core.model.VoiceLanguage
 import com.example.core.model.VoiceProcessingMode
 import com.example.core.model.VoiceSourceType
@@ -36,7 +35,6 @@ import com.example.core.voice.AudioQualityValidator
 import com.example.core.voice.OutputVoiceManager
 import com.example.core.voice.VoiceDataPrivacyManager
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -78,7 +76,6 @@ class AninViewModel(application: Application) : AndroidViewModel(application) {
         _wakeWordTriggerCount.value += 1
     }
 
-    // Room reactive streams
     val allProfiles: StateFlow<List<OutputVoiceProfileEntity>> = db.outputVoiceDao().getAllProfiles()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -97,7 +94,6 @@ class AninViewModel(application: Application) : AndroidViewModel(application) {
         subhamEnrollmentManager.completedSamplesFlow
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Real-time audio & diagnostics
     val audioMetrics: StateFlow<AudioCaptureMetrics> = audioCaptureManager.metrics
     val audioCapabilities: StateFlow<AudioHardwareCapabilities> = audioCaptureManager.capabilities
 
@@ -110,26 +106,21 @@ class AninViewModel(application: Application) : AndroidViewModel(application) {
     private val _isForegroundServiceActive = MutableStateFlow(false)
     val isForegroundServiceActive: StateFlow<Boolean> = _isForegroundServiceActive.asStateFlow()
 
-    // Subham authentication state
     private val _isSubhamEnrolled = MutableStateFlow(false)
     val isSubhamEnrolled: StateFlow<Boolean> = _isSubhamEnrolled.asStateFlow()
 
     private val _subhamMetadata = MutableStateFlow<EnrollmentMetadata?>(null)
     val subhamMetadata: StateFlow<EnrollmentMetadata?> = _subhamMetadata.asStateFlow()
 
-    // Interactive verification test simulator
     private val _verificationTestResult = MutableStateFlow<VerificationResult?>(null)
     val verificationTestResult: StateFlow<VerificationResult?> = _verificationTestResult.asStateFlow()
 
-    // Custom Output Voice Enrollment flow state
     private val _enrollmentState = MutableStateFlow(OutputVoiceEnrollmentState())
     val enrollmentState: StateFlow<OutputVoiceEnrollmentState> = _enrollmentState.asStateFlow()
 
-    // Assistant live chat / conversation history
     private val _interactions = MutableStateFlow<List<AssistantInteraction>>(emptyList())
     val interactions: StateFlow<List<AssistantInteraction>> = _interactions.asStateFlow()
 
-    // Status snackbar / banner message
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
@@ -139,19 +130,16 @@ class AninViewModel(application: Application) : AndroidViewModel(application) {
             refreshAuthStatus()
             refreshDeviceDiagnostics()
 
-            // Connect audio capture to wake-word engine and echo cancellation state
             audioCaptureManager.setOnAudioChunkListener { chunk ->
                 wakeWordEngine.processAudioFrame(chunk)
             }
 
-            // Monitor assistant speaking to gate wake word loop (prevent self-trigger)
             launch {
                 audioPlaybackManager.isAssistantSpeaking.collect { speaking ->
                     wakeWordEngine.updatePlaybackState(speaking)
                 }
             }
 
-            // Auto run 10-day retention check on startup
             val purgedCount = privacyManager.enforceRetentionPolicy()
             if (purgedCount > 0) {
                 _statusMessage.value = "10-day retention check: $purgedCount expired voice sample(s) automatically purged."
@@ -172,7 +160,6 @@ class AninViewModel(application: Application) : AndroidViewModel(application) {
         _deviceDiagnostics.value = assistantBrain.diagnosticsManager.getCompleteDiagnostics()
     }
 
-    // --- Audio Capture & Foreground Service ---
     fun toggleAudioCapture(start: Boolean) {
         if (start) {
             val success = audioCaptureManager.startCapture()
@@ -195,7 +182,6 @@ class AninViewModel(application: Application) : AndroidViewModel(application) {
         wakeWordEngine.triggerWakeWordManually()
     }
 
-    // --- Subham Biometric Voice Enrollment ---
     fun enrollSubhamSentenceSample(sentence: EnrollmentSentence, sampleRate: Int = 16000) {
         viewModelScope.launch(Dispatchers.Default) {
             val durationSec = 2.5
@@ -252,30 +238,26 @@ class AninViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- Test Speaker Verification Simulation ---
     fun testSpeakerVerification(mode: String) {
         viewModelScope.launch(Dispatchers.Default) {
             val sampleRate = 16000
-            val buffer = FloatArray(sampleRate * 2) // 2 sec audio
+            val buffer = FloatArray(sampleRate * 2)
             val isAninSpeaking = mode == "anin_voice"
 
             when (mode) {
                 "subham" -> {
-                    // Subham fundamental pitch 135 Hz
                     for (i in buffer.indices) {
                         val t = i.toDouble() / sampleRate
                         buffer[i] = (sin(2 * Math.PI * 135.0 * t) * 0.5 * sin(Math.PI * i / buffer.size)).toFloat()
                     }
                 }
                 "stranger" -> {
-                    // Imposter / Stranger with high frequency pitch 260 Hz
                     for (i in buffer.indices) {
                         val t = i.toDouble() / sampleRate
                         buffer[i] = (sin(2 * Math.PI * 260.0 * t) * 0.45 * sin(Math.PI * i / buffer.size)).toFloat()
                     }
                 }
                 "anin_voice" -> {
-                    // Anin synthesizer pitch
                     val pitchMult = outputVoiceManager.activeProfile.value?.pitchMultiplier ?: 1.0f
                     val synthFreq = 150.0 * pitchMult
                     for (i in buffer.indices) {
@@ -298,7 +280,6 @@ class AninViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- Output Voice Enrollment Wizard ---
     fun startNewProfileEnrollment() {
         _enrollmentState.value = OutputVoiceEnrollmentState(step = 1)
     }
@@ -436,7 +417,7 @@ class AninViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val profileId = "custom_voice_${UUID.randomUUID()}"
             val now = System.currentTimeMillis()
-            val expiresAt = now + VoiceDataPrivacyManager.RETENTION_PERIOD_MS // 10 days retention
+            val expiresAt = now + VoiceDataPrivacyManager.RETENTION_PERIOD_MS
 
             val (pitchMultiplier, speechRateMultiplier) =
                 AudioQualityValidator.extractVoiceSynthesisParams(samples, 16000)
@@ -454,7 +435,7 @@ class AninViewModel(application: Application) : AndroidViewModel(application) {
                     fos.write(byteBuffer)
                 }
             } catch (e: Exception) {
-                // Ignore file write errors in restricted sandbox
+                // Ignore
             }
 
             val entity = OutputVoiceProfileEntity(
@@ -500,7 +481,6 @@ class AninViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- Voice Selection & Management ---
     fun selectOutputVoice(profileId: String) {
         viewModelScope.launch {
             outputVoiceManager.selectActiveProfile(profileId)
@@ -530,7 +510,6 @@ class AninViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- Preview Voice ---
     fun previewVoice(profile: OutputVoiceProfileEntity, language: VoiceLanguage) {
         viewModelScope.launch {
             outputVoiceManager.selectActiveProfile(profile.id)
@@ -550,7 +529,6 @@ class AninViewModel(application: Application) : AndroidViewModel(application) {
         outputVoiceManager.stopSpeaking()
     }
 
-    // --- Assistant Live Interaction ---
     fun sendAssistantMessage(text: String, simulateSubham: Boolean = true) {
         if (text.isBlank()) return
         viewModelScope.launch {
@@ -567,11 +545,9 @@ class AninViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- Personal Memory Operations ---
     fun addPersonalMemory(category: MemoryCategory, content: String) {
         if (content.isBlank()) return
         viewModelScope.launch(Dispatchers.IO) {
-            val encryptedContent = cryptoManager.encrypt(content)
             db.personalMemoryDao().insertMemory(
                 PersonalMemoryEntity(
                     category = category,
@@ -597,7 +573,6 @@ class AninViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- Reminders Operations ---
     fun addReminder(title: String, inMinutes: Int = 60) {
         viewModelScope.launch(Dispatchers.IO) {
             val target = System.currentTimeMillis() + inMinutes * 60000L
@@ -619,7 +594,6 @@ class AninViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- Privacy Actions ---
     fun clearSynthesisCache() {
         viewModelScope.launch {
             val bytes = privacyManager.clearSynthesisCache()
