@@ -180,6 +180,15 @@ class AninViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
+            launch {
+                speechRecognizer.status.collect { status ->
+                    if (status.state == SpeechRecognitionState.ERROR && status.errorMessage != null) {
+                        _statusMessage.value = "Speech recognition: ${status.errorMessage}"
+                        startWakeWordListening()
+                    }
+                }
+            }
+
             val purgedCount = privacyManager.enforceRetentionPolicy()
             if (purgedCount > 0) {
                 _statusMessage.value = "10-day retention check: $purgedCount expired voice sample(s) automatically purged."

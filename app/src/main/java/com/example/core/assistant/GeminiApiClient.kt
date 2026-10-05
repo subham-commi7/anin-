@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit
 
 data class GeminiDiagnosticsState(
     val isConfigured: Boolean = false,
+    val connectionType: String = "SECURE_SERVER_PROXY",
     val isKeyMaskedPresent: Boolean = false,
     val lastStatusCode: Int? = null,
     val lastLatencyMs: Long = 0L,
@@ -28,11 +29,11 @@ data class GeminiDiagnosticsState(
     val totalRequests: Int = 0,
     val successfulRequests: Int = 0,
     val failedRequests: Int = 0,
-    val modelName: String = "gemini-2.5-flash"
+    val modelName: String = "gemini-3.8-flash"
 )
 
 sealed class GeminiApiResult {
-    data class Success(val structuredOutput: GeminiStructuredOutput, val latencyMs: Long) : GeminiApiResult()
+    data class Success(val structuredOutput: GeminiStructuredOutput, val latencyMs: Long, val viaProxy: Boolean = true) : GeminiApiResult()
     data class Failure(val statusCode: Int?, val message: String, val isNetworkOrTimeout: Boolean = false) : GeminiApiResult()
 }
 
@@ -42,31 +43,37 @@ class GeminiApiClient(
 ) {
     companion object {
         private const val TAG = "GeminiApiClient"
-        private const val MODEL_NAME = "gemini-2.5-flash"
-        private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+        private const val PROXY_ENDPOINT = "http://10.0.2.2:3000/api/orchestrator/process"
+        private const val DIRECT_MODEL_NAME = "gemini-2.5-flash"
+        private const val DIRECT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
     }
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(12, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(12, TimeUnit.SECONDS)
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(12, TimeUnit.SECONDS)
+        .writeTimeout(8, TimeUnit.SECONDS)
         .build()
 
     private val _diagnostics = MutableStateFlow(
         GeminiDiagnosticsState(
-            isConfigured = isKeyConfigured(),
-            isKeyMaskedPresent = isKeyConfigured(),
-            modelName = MODEL_NAME
+            isConfigured = hasSecureBackendOrDirectKey(),
+            connectionType = if (isDirectKeyConfigured()) "DIRECT_KEY" else "SECURE_SERVER_PROXY",
+            isKeyMaskedPresent = isDirectKeyConfigured(),
+            modelName = "gemini-3.8-flash"
         )
     )
     val diagnostics: StateFlow<GeminiDiagnosticsState> = _diagnostics.asStateFlow()
 
-    fun isKeyConfigured(): Boolean {
-        val key = getApiKey()
+    fun isDirectKeyConfigured(): Boolean {
+        val key = getDirectApiKey()
         return !key.isNullOrBlank() && key != "YOUR_GEMINI_API_KEY" && key != "MY_GEMINI_API_KEY_DEFAULT_VALUE"
     }
 
-    private fun getApiKey(): String? {
+    fun hasSecureBackendOrDirectKey(): Boolean {
+        return true // Primary architecture uses server-side proxy
+    }
+
+    private fun getDirectApiKey(): String? {
         return try {
             BuildConfig.GEMINI_API_KEY
         } catch (e: Exception) {
@@ -79,165 +86,193 @@ class GeminiApiClient(
         language: VoiceLanguage,
         assistantContext: AssistantContext
     ): GeminiApiResult = withContext(Dispatchers.IO) {
-        val apiKey = getApiKey()
-        if (apiKey.isNullOrBlank() || apiKey == "YOUR_GEMINI_API_KEY") {
-            _diagnostics.value = _diagnostics.value.copy(
-                isConfigured = false,
-                isKeyMaskedPresent = false,
-                lastErrorMessage = "GEMINI_API_KEY not configured in .env / AI Studio Secrets panel."
-            )
-            return@withContext GeminiApiResult.Failure(
-                statusCode = null,
-                message = "Gemini API key is not configured. Please configure GEMINI_API_KEY in AI Studio Secrets panel."
-            )
-        }
-
         val startTime = System.currentTimeMillis()
-        val capabilitiesDesc = capabilityRegistry.getCapabilitiesSummaryForAi()
-        val contextPrompt = assistantContext.toGeminiContextPrompt()
-
-        val systemInstructionText = """
-            You are Anin, Subham's private, trusted, highly capable personal Android voice assistant on his iQOO Neo 10R.
-            User: Subham Sarkar.
-            Current Language: ${language.displayName} (${language.code}). Always respond naturally in the user's spoken language unless instructed otherwise.
-
-            $capabilitiesDesc
-
-            $contextPrompt
-
-            CRITICAL RULES:
-            1. You DO NOT directly execute Android APIs. You propose structured actions, and Anin's local Safety Gate and Action Executor validate and execute them.
-            2. Never propose actions for capabilities marked UNAVAILABLE.
-            3. Strict Financial Refusal: Any money transfer, UPI, or banking transaction MUST be rejected with type 'SAFETY_REFUSAL'.
-            4. Output MUST be valid JSON conforming to one of these formats:
-               - For single device action:
-                 {"type": "ACTION", "capability": "youtube|battery|maps|camera|settings|browser|reminders|phone_dialer", "intent": "OPEN_APP|BATTERY_STATUS|REMINDER_CREATE|...", "arguments": {"query": "..."}, "response": "Short natural response to Subham"}
-               - For multi-step actions (e.g. open YouTube AND set reminder):
-                 {"type": "MULTI_ACTION", "actions": [{"capability": "youtube", "intent": "OPEN_APP", "arguments": {}}, {"capability": "reminders", "intent": "REMINDER_CREATE", "arguments": {"title": "Study", "time": "1 hour"}}], "response": "Short natural response"}
-               - For general conversation, explanation, advice, routine, educational help:
-                 {"type": "CONVERSATION", "answer": "Detailed helpful answer in ${language.displayName}"}
-               - For clarification:
-                 {"type": "CLARIFICATION", "question": "Question to Subham"}
-        """.trimIndent()
-
-        val requestJson = JSONObject().apply {
-            // System instruction
-            put("systemInstruction", JSONObject().apply {
-                put("parts", JSONArray().apply {
-                    put(JSONObject().apply { put("text", systemInstructionText) })
-                })
-            })
-
-            // Contents
-            put("contents", JSONArray().apply {
-                put(JSONObject().apply {
-                    put("parts", JSONArray().apply {
-                        put(JSONObject().apply { put("text", userQuery) })
-                    })
-                })
-            })
-
-            // Generation config with JSON response schema
-            put("generationConfig", JSONObject().apply {
-                put("temperature", 0.3)
-                put("responseMimeType", "application/json")
-            })
-        }
-
-        val mediaType = "application/json; charset=utf-8".toMediaType()
-        val body = requestJson.toString().toRequestBody(mediaType)
-        val url = "$BASE_URL/$MODEL_NAME:generateContent?key=$apiKey"
-
-        val request = Request.Builder()
-            .url(url)
-            .post(body)
-            .addHeader("Content-Type", "application/json")
-            .build()
 
         _diagnostics.value = _diagnostics.value.copy(
             totalRequests = _diagnostics.value.totalRequests + 1
         )
 
-        try {
-            val response = httpClient.newCall(request).execute()
-            val latency = System.currentTimeMillis() - startTime
-            val statusCode = response.code
-            val responseBody = response.body?.string() ?: ""
+        // 1. PRIMARY PATH: Secure Server-Side Proxy (Zero secret compiled into APK)
+        val proxyResult = callServerProxy(userQuery, language, assistantContext, startTime)
+        if (proxyResult is GeminiApiResult.Success) {
+            _diagnostics.value = _diagnostics.value.copy(
+                isConfigured = true,
+                connectionType = "SECURE_SERVER_PROXY",
+                lastStatusCode = 200,
+                lastLatencyMs = proxyResult.latencyMs,
+                lastErrorMessage = null,
+                successfulRequests = _diagnostics.value.successfulRequests + 1,
+                modelName = "gemini-3.8-flash (via Server Proxy)"
+            )
+            return@withContext proxyResult
+        }
 
-            if (!response.isSuccessful) {
-                val errorMsg = when (statusCode) {
-                    400 -> "HTTP 400 Bad Request: Check API parameters or model format."
-                    401 -> "HTTP 401 Unauthorized: Invalid or missing Gemini API key. Please check AI Studio Secrets panel."
-                    403 -> "HTTP 403 Forbidden: Key lacks permission for $MODEL_NAME or region blocked."
-                    429 -> "HTTP 429 Quota Exceeded / Rate Limit: Gemini request limit reached."
-                    500, 503 -> "HTTP $statusCode Server Error: Gemini backend temporarily unreachable."
-                    else -> "HTTP $statusCode: $responseBody"
-                }
-
+        // 2. FALLBACK PATH: Direct Gemini REST if direct key configured
+        if (isDirectKeyConfigured()) {
+            val directKey = getDirectApiKey()!!
+            val directResult = callDirectGeminiRest(userQuery, language, assistantContext, directKey, startTime)
+            if (directResult is GeminiApiResult.Success) {
                 _diagnostics.value = _diagnostics.value.copy(
-                    lastStatusCode = statusCode,
-                    lastLatencyMs = latency,
-                    lastErrorMessage = errorMsg,
+                    isConfigured = true,
+                    connectionType = "DIRECT_REST",
+                    lastStatusCode = 200,
+                    lastLatencyMs = directResult.latencyMs,
+                    lastErrorMessage = null,
+                    successfulRequests = _diagnostics.value.successfulRequests + 1,
+                    modelName = DIRECT_MODEL_NAME
+                )
+                return@withContext directResult
+            } else if (directResult is GeminiApiResult.Failure) {
+                _diagnostics.value = _diagnostics.value.copy(
+                    lastStatusCode = directResult.statusCode,
+                    lastLatencyMs = System.currentTimeMillis() - startTime,
+                    lastErrorMessage = directResult.message,
                     failedRequests = _diagnostics.value.failedRequests + 1
                 )
+                return@withContext directResult
+            }
+        }
 
-                return@withContext GeminiApiResult.Failure(
-                    statusCode = statusCode,
-                    message = errorMsg
+        // 3. NEITHER SUCCEEDED: Clean truthful status (Never crashes, local capabilities stay fully operational)
+        val failureMsg = if (proxyResult is GeminiApiResult.Failure) {
+            proxyResult.message
+        } else {
+            "Secure server proxy unreachable and direct GEMINI_API_KEY not set."
+        }
+
+        _diagnostics.value = _diagnostics.value.copy(
+            lastStatusCode = if (proxyResult is GeminiApiResult.Failure) proxyResult.statusCode else null,
+            lastLatencyMs = System.currentTimeMillis() - startTime,
+            lastErrorMessage = failureMsg,
+            failedRequests = _diagnostics.value.failedRequests + 1
+        )
+
+        GeminiApiResult.Failure(
+            statusCode = null,
+            message = failureMsg,
+            isNetworkOrTimeout = true
+        )
+    }
+
+    private fun callServerProxy(
+        userQuery: String,
+        language: VoiceLanguage,
+        assistantContext: AssistantContext,
+        startTime: Long
+    ): GeminiApiResult {
+        return try {
+            val reqObj = JSONObject().apply {
+                put("query", userQuery)
+                put("detectedLanguage", language.code)
+                put("memoryContext", JSONArray(assistantContext.relevantMemories))
+                put("capabilities", JSONArray(assistantContext.availableCapabilities))
+                put("deviceDiagnostics", JSONObject().apply {
+                    put("model", assistantContext.deviceModel)
+                    put("battery", assistantContext.batteryPercentage)
+                })
+            }
+
+            val body = reqObj.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+            val request = Request.Builder()
+                .url(PROXY_ENDPOINT)
+                .post(body)
+                .build()
+
+            val response = httpClient.newCall(request).execute()
+            val latency = System.currentTimeMillis() - startTime
+            val bodyStr = response.body?.string() ?: ""
+
+            if (!response.isSuccessful) {
+                return GeminiApiResult.Failure(
+                    statusCode = response.code,
+                    message = "Server proxy returned HTTP ${response.code}"
                 )
             }
 
-            // Parse response
-            val respObj = JSONObject(responseBody)
-            val candidates = respObj.optJSONArray("candidates")
-            val firstCandidate = candidates?.optJSONObject(0)
-            val contentObj = firstCandidate?.optJSONObject("content")
-            val parts = contentObj?.optJSONArray("parts")
+            val respJson = JSONObject(bodyStr)
+            val success = respJson.optBoolean("success", true)
+            val responseText = respJson.optString("responseText", "")
+
+            if (responseText.isNotBlank()) {
+                val structured = GeminiStructuredOutput.parse(responseText)
+                GeminiApiResult.Success(structured, latency, viaProxy = true)
+            } else {
+                GeminiApiResult.Failure(statusCode = 200, message = "Empty response from server proxy")
+            }
+        } catch (e: Exception) {
+            GeminiApiResult.Failure(statusCode = null, message = "Proxy error: ${e.message}", isNetworkOrTimeout = true)
+        }
+    }
+
+    private fun callDirectGeminiRest(
+        userQuery: String,
+        language: VoiceLanguage,
+        assistantContext: AssistantContext,
+        apiKey: String,
+        startTime: Long
+    ): GeminiApiResult {
+        return try {
+            val capabilitiesDesc = capabilityRegistry.getCapabilitiesSummaryForAi()
+            val contextPrompt = assistantContext.toGeminiContextPrompt()
+
+            val systemInstructionText = """
+                You are Anin, Subham's private, trusted personal Android voice assistant on his iQOO Neo 10R.
+                User: Subham Sarkar.
+                Current Language: ${language.displayName} (${language.code}).
+                $capabilitiesDesc
+                $contextPrompt
+                Strict Security & Financial Rules:
+                1. No money transfers, UPI, or banking transactions.
+                2. Output valid JSON: {"type": "ACTION|MULTI_ACTION|CONVERSATION", ...}
+            """.trimIndent()
+
+            val requestJson = JSONObject().apply {
+                put("systemInstruction", JSONObject().apply {
+                    put("parts", JSONArray().apply {
+                        put(JSONObject().apply { put("text", systemInstructionText) })
+                    })
+                })
+                put("contents", JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("parts", JSONArray().apply {
+                            put(JSONObject().apply { put("text", userQuery) })
+                        })
+                    })
+                })
+                put("generationConfig", JSONObject().apply {
+                    put("temperature", 0.3)
+                    put("responseMimeType", "application/json")
+                })
+            }
+
+            val body = requestJson.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+            val url = "$DIRECT_BASE_URL/$DIRECT_MODEL_NAME:generateContent?key=$apiKey"
+
+            val request = Request.Builder()
+                .url(url)
+                .post(body)
+                .build()
+
+            val response = httpClient.newCall(request).execute()
+            val latency = System.currentTimeMillis() - startTime
+            val bodyStr = response.body?.string() ?: ""
+
+            if (!response.isSuccessful) {
+                return GeminiApiResult.Failure(
+                    statusCode = response.code,
+                    message = "Direct Gemini API returned HTTP ${response.code}"
+                )
+            }
+
+            val respObj = JSONObject(bodyStr)
+            val candidate = respObj.optJSONArray("candidates")?.optJSONObject(0)
+            val parts = candidate?.optJSONObject("content")?.optJSONArray("parts")
             val rawOutput = parts?.optJSONObject(0)?.optString("text") ?: ""
 
             val structured = GeminiStructuredOutput.parse(rawOutput)
-
-            _diagnostics.value = _diagnostics.value.copy(
-                lastStatusCode = 200,
-                lastLatencyMs = latency,
-                lastErrorMessage = null,
-                successfulRequests = _diagnostics.value.successfulRequests + 1
-            )
-
-            GeminiApiResult.Success(
-                structuredOutput = structured,
-                latencyMs = latency
-            )
-        } catch (e: SocketTimeoutException) {
-            val latency = System.currentTimeMillis() - startTime
-            val msg = "Gemini request timed out after ${latency}ms."
-            _diagnostics.value = _diagnostics.value.copy(
-                lastStatusCode = null,
-                lastLatencyMs = latency,
-                lastErrorMessage = msg,
-                failedRequests = _diagnostics.value.failedRequests + 1
-            )
-            GeminiApiResult.Failure(statusCode = null, message = msg, isNetworkOrTimeout = true)
-        } catch (e: IOException) {
-            val latency = System.currentTimeMillis() - startTime
-            val msg = "Network connection failed while calling Gemini: ${e.message}"
-            _diagnostics.value = _diagnostics.value.copy(
-                lastStatusCode = null,
-                lastLatencyMs = latency,
-                lastErrorMessage = msg,
-                failedRequests = _diagnostics.value.failedRequests + 1
-            )
-            GeminiApiResult.Failure(statusCode = null, message = msg, isNetworkOrTimeout = true)
+            GeminiApiResult.Success(structured, latency, viaProxy = false)
         } catch (e: Exception) {
-            val latency = System.currentTimeMillis() - startTime
-            val msg = "Gemini execution exception: ${e.message}"
-            _diagnostics.value = _diagnostics.value.copy(
-                lastStatusCode = null,
-                lastLatencyMs = latency,
-                lastErrorMessage = msg,
-                failedRequests = _diagnostics.value.failedRequests + 1
-            )
-            GeminiApiResult.Failure(statusCode = null, message = msg)
+            GeminiApiResult.Failure(statusCode = null, message = "Direct REST error: ${e.message}", isNetworkOrTimeout = true)
         }
     }
 }

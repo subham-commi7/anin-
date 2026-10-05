@@ -106,6 +106,7 @@ app.post('/api/orchestrator/process', async (req, res) => {
       memoryContext = [],
       deviceDiagnostics = {},
       detectedLanguage = 'en',
+      capabilities = [],
       shouldSearchWeb = false
     } = req.body;
 
@@ -133,7 +134,10 @@ Strict Security & Financial Rules:
 1. You are strictly forbidden from automating or executing money transfers, UPI payments (GPay/PhonePe/Paytm), bank transfers, or card payments. If requested, refuse politely and suggest manual app access.
 2. If web search is performed, ground your answer in verified real-time facts and synthesize clearly.
 3. Relevant long-term memory context: ${JSON.stringify(memoryContext)}.
-4. Current Device Hardware: ${JSON.stringify(deviceDiagnostics)}.`;
+4. Current Device Hardware: ${JSON.stringify(deviceDiagnostics)}.
+5. Available Device Capabilities: ${JSON.stringify(capabilities)}.
+If the user requests a local device action (e.g. YouTube, Maps, Settings, Reminders), you may output structured JSON:
+{"type": "ACTION", "capability": "youtube|maps|camera|settings|reminders", "intent": "OPEN_APP|...", "arguments": {"query": "..."}, "response": "Natural message to Subham"}`;
 
     // Configure tools: If web search is relevant, enable Google Search grounding
     const toolsConfig: any[] = [];
@@ -159,15 +163,29 @@ Strict Security & Financial Rules:
       ]
     });
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents,
-      config: {
-        systemInstruction,
-        tools: toolsConfig.length > 0 ? toolsConfig : undefined,
-        temperature: 0.7
-      }
-    });
+    let response;
+    try {
+      response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents,
+        config: {
+          systemInstruction,
+          tools: toolsConfig.length > 0 ? toolsConfig : undefined,
+          temperature: 0.7
+        }
+      });
+    } catch (primaryErr: any) {
+      console.warn('gemini-3.8-flash failed, attempting fallback to gemini-2.5-flash:', primaryErr.message);
+      response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents,
+        config: {
+          systemInstruction,
+          tools: toolsConfig.length > 0 ? toolsConfig : undefined,
+          temperature: 0.7
+        }
+      });
+    }
 
     const responseText = response.text || '';
 
